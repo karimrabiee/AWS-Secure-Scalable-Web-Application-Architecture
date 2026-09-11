@@ -478,7 +478,7 @@ NAT Gateways and RDS bill every hour — delete those first.
 ## Author
 
 **Kareem Rabea**
-AWS Cloud Engineer | Preparing for AWS Solutions Architect Associate (SAA-C03)
+Cloud Engineer | AWS | Linux | Networking | Terraform
 
 [![LinkedIn](https://img.shields.io/badge/LinkedIn-kareem--rabiee-0077B5?style=flat-square&logo=linkedin)](https://www.linkedin.com/in/karim-rabiee)
 [![GitHub](https://img.shields.io/badge/GitHub-kareemrabiee-181717?style=flat-square&logo=github)](https://github.com/karimrabiee)
