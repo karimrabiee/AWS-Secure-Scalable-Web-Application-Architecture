@@ -480,5 +480,5 @@ NAT Gateways and RDS bill every hour — delete those first.
 **Kareem Rabea**
 AWS Cloud Engineer | Preparing for AWS Solutions Architect Associate (SAA-C03)
 
-[![LinkedIn](https://img.shields.io/badge/LinkedIn-kareem--rabiee-0077B5?style=flat-square&logo=linkedin)](https://www.linkedin.com/in/kareem-rabiee)
-[![GitHub](https://img.shields.io/badge/GitHub-kareemrabiee-181717?style=flat-square&logo=github)](https://github.com/kareemrabiee)
+[![LinkedIn](https://img.shields.io/badge/LinkedIn-kareem--rabiee-0077B5?style=flat-square&logo=linkedin)](https://www.linkedin.com/in/karim-rabiee)
+[![GitHub](https://img.shields.io/badge/GitHub-kareemrabiee-181717?style=flat-square&logo=github)](https://github.com/karimrabiee)
