@@ -1,0 +1,47 @@
+# Terraform
+**/.terraform/*
+.terraform.lock.hcl.tmp
+*.tfstate
+*.tfstate.*
+*.tfvars
+*.tfvars.json
+*.tfplan
+crash.log
+crash.*.log
+!terraform.tfvars.example
+backend.hcl
+!backend.hcl.example
+*.zip
+!load-testing/**/*.zip
+
+# NOTE: .terraform.lock.hcl is intentionally NOT ignored - HashiCorp
+# recommends committing it for root modules (environments/dev,
+# environments/prod, bootstrap) so everyone uses the same provider builds.
+# It is fine, and expected, for it to appear inside environments/dev/ and
+# environments/prod/ once someone runs `terraform init` there.
+
+# Never commit a working directory's cache/binaries
+**/.terraform/
+**/__pycache__/
+*.py[cod]
+.venv/
+venv/
+.env
+.env.*
+
+# AWS credentials
+*.pem
+*.ppk
+.aws/
+credentials
+aws-credentials*
+
+# discovery / CI output that may contain account IDs or ARNs
+discovery-output.txt
+
+# Editor / OS
+.idea/
+.vscode/
+*.swp
+.DS_Store
+

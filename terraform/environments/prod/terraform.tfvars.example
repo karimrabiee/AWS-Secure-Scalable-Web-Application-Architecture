@@ -1,0 +1,9 @@
+aws_region        = "us-east-1"
+project_name      = "ecomm-platform"
+db_instance_class = "db.t3.micro"
+# ami_id is optional - leave unset to auto-discover the latest Amazon Linux
+# 2023 AMI via SSM Parameter Store. Pin it only once you want deliberate,
+# controlled AMI updates:
+# ami_id = "ami-REPLACE_ME"
+# certificate_arn = "arn:aws:acm:us-east-1:ACCOUNT_ID:certificate/REPLACE_ME"
+# alarm_email = "you@example.com"

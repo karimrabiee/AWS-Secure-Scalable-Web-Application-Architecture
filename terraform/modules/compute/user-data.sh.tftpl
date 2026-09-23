@@ -1,0 +1,90 @@
+#!/bin/bash
+set -euo pipefail
+
+# Small, understandable application runtime: Nginx -> Gunicorn -> Flask.
+dnf install -y nginx python3 python3-pip jq awscli
+
+APP_DIR=/opt/ecomm-app
+CONFIG_DIR=/etc/ecomm-app
+mkdir -p "$APP_DIR" "$CONFIG_DIR" /var/lib/app
+
+# IMDSv2 metadata is used only for the demo page; instances remain private.
+TOKEN=$(curl --silent --fail --max-time 5 -X PUT \
+  -H "X-aws-ec2-metadata-token-ttl-seconds: 60" \
+  http://169.254.169.254/latest/api/token)
+AZ=$(curl --silent --fail --max-time 5 \
+  -H "X-aws-ec2-metadata-token: $${TOKEN}" \
+  http://169.254.169.254/latest/meta-data/placement/availability-zone)
+INSTANCE_ID=$(curl --silent --fail --max-time 5 \
+  -H "X-aws-ec2-metadata-token: $${TOKEN}" \
+  http://169.254.169.254/latest/meta-data/instance-id)
+echo -n "$${AZ}" > /var/lib/app/az.txt
+echo -n "$${INSTANCE_ID}" > /var/lib/app/instance-id.txt
+
+# Terraform embeds application source, not secrets.
+echo '${app_py_b64}' | base64 -d > "$APP_DIR/app.py"
+echo '${requirements_b64}' | base64 -d > "$APP_DIR/requirements.txt"
+python3 -m venv "$APP_DIR/venv"
+"$APP_DIR/venv/bin/pip" install --no-cache-dir -r "$APP_DIR/requirements.txt"
+
+# Fetch the RDS credentials at boot through the instance role. The secret is
+# written as JSON with jq so special characters in a password remain safe.
+SECRET_JSON=$(aws secretsmanager get-secret-value \
+  --secret-id '${db_secret_arn}' \
+  --query SecretString --output text)
+DB_USER=$(echo "$${SECRET_JSON}" | jq -r .username)
+DB_PASS=$(echo "$${SECRET_JSON}" | jq -r .password)
+jq -n \
+  --arg host '${db_address}' \
+  --arg port '${db_port}' \
+  --arg name '${db_name}' \
+  --arg user "$${DB_USER}" \
+  --arg password "$${DB_PASS}" \
+  '{host:$host, port:($port|tonumber), name:$name, user:$user, password:$password}' \
+  > "$CONFIG_DIR/db.json"
+chmod 640 "$CONFIG_DIR/db.json"
+
+id ecomm-app &>/dev/null || useradd --system --home-dir "$APP_DIR" --shell /sbin/nologin ecomm-app
+chown -R ecomm-app:ecomm-app "$APP_DIR" /var/lib/app
+chown root:ecomm-app "$CONFIG_DIR/db.json"
+
+cat > /etc/systemd/system/ecomm-app.service <<'SERVICE'
+[Unit]
+Description=E-commerce Flask application
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+User=ecomm-app
+Group=ecomm-app
+WorkingDirectory=/opt/ecomm-app
+ExecStart=/opt/ecomm-app/venv/bin/gunicorn --workers 2 --bind 127.0.0.1:8000 --access-logfile - app:app
+Restart=on-failure
+RestartSec=5
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=full
+ReadWritePaths=/var/lib/app
+
+[Install]
+WantedBy=multi-user.target
+SERVICE
+
+cat > /etc/nginx/conf.d/ecomm-app.conf <<'NGINX'
+server {
+    listen 80 default_server;
+    server_name _;
+    location / {
+        proxy_pass http://127.0.0.1:8000;
+        proxy_set_header Host $host;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto $scheme;
+    }
+}
+NGINX
+rm -f /etc/nginx/conf.d/default.conf
+nginx -t
+systemctl daemon-reload
+systemctl enable --now ecomm-app
+systemctl enable --now nginx
+systemctl restart nginx

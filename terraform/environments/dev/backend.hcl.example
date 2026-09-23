@@ -1,0 +1,4 @@
+bucket       = "replace_by_bucket_name"
+key          = "ecomm-platform/dev/terraform.tfstate"
+region       = "us-east-1"
+use_lockfile = true
