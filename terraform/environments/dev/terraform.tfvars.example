@@ -1,5 +1,8 @@
 aws_region   = "us-east-1"
 project_name = "ecomm-platform"
+# CPU target tracking is enabled by default. Override only for a deliberate test.
+# enable_cpu_scaling     = true
+# cpu_target_percentage  = 60
 # ami_id is optional - leave unset to auto-discover the latest Amazon Linux
 # 2023 AMI via SSM Parameter Store. Pin it only once you want deliberate,
 # controlled AMI updates:

@@ -109,7 +109,7 @@ sudo journalctl -u nginx -n 100 --no-pager
 
 ## 8. Load testing the Auto Scaling policy
 
-`load-testing/k6-script.js` ramps traffic up to 1,000 virtual users to exercise the CPU-based scaling policy and the `alb_response_time` / `alb_5xx` alarms under load:
+`load-testing/k6-script.js` ramps traffic up to 1,000 virtual users to exercise the ASG target-tracking policy based on average CPU and the `alb_response_time` / `alb_5xx` alarms under load. The policy targets 60% average CPU by default and can be disabled with `enable_cpu_scaling = false`.
 
 ```bash
 k6 run -e TARGET_URL=http://<alb_dns_name> load-testing/k6-script.js

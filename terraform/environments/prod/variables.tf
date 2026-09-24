@@ -72,6 +72,22 @@ variable "asg_max_size" {
   default = 4
 }
 
+variable "enable_cpu_scaling" {
+  description = "Enable ASG target tracking based on average CPU utilization."
+  type        = bool
+  default     = true
+}
+
+variable "cpu_target_percentage" {
+  description = "Target average CPU utilization for ASG target tracking."
+  type        = number
+  default     = 60
+  validation {
+    condition     = var.cpu_target_percentage > 0 && var.cpu_target_percentage < 100
+    error_message = "cpu_target_percentage must be greater than 0 and less than 100."
+  }
+}
+
 # No default on purpose: this forces a deliberate, explicit choice instead
 # of silently picking one. Confirm against the real instance if migrating,
 # or size for expected peak load (see docs/OPERATIONS.md) if this is a new

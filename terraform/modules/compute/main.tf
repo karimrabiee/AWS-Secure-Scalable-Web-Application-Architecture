@@ -168,3 +168,24 @@ resource "aws_autoscaling_group" "app" {
   # template and security groups, which use name_prefix specifically so
   # create_before_destroy is safe for them.
 }
+
+# Target tracking provides the CPU-based scale-out/scale-in behavior used by
+# the load-testing procedure. The ASG still enforces min/max capacity when
+# scaling is disabled, while this policy adjusts desired capacity when it is
+# enabled.
+resource "aws_autoscaling_policy" "cpu_target_tracking" {
+  count                     = var.enable_cpu_scaling ? 1 : 0
+  name                      = "${var.asg_name}-cpu-target-tracking"
+  autoscaling_group_name    = aws_autoscaling_group.app.name
+  policy_type               = "TargetTrackingScaling"
+  estimated_instance_warmup = 180
+
+  target_tracking_configuration {
+    predefined_metric_specification {
+      predefined_metric_type = "ASGAverageCPUUtilization"
+    }
+
+    target_value     = var.cpu_target_percentage
+    disable_scale_in = false
+  }
+}

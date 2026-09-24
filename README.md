@@ -10,7 +10,7 @@
 
 </div>
 
-> A production-inspired AWS three-tier web application: secure, highly available, monitored, and deployed with Terraform. Built manually through the AWS Console first to validate the design under real failure conditions, then codified into Terraform for reproducible infrastructure.
+> A production-inspired AWS three-tier web application: secure, highly available, monitored, and codified with Terraform. The architecture was built manually first to validate the design under real failure conditions, then represented as reusable Terraform modules. It is a portfolio implementation, not a claim of an independently audited production service.
 
 **Lifecycle:** Design → Manual AWS Build → Validation → Terraform Migration → Reproducible Infrastructure
 
@@ -80,7 +80,7 @@ Internet → ALB-SG (80, and 443 once a certificate exists, from 0.0.0.0/0)
         → RDS-SG (port 3306, from EC2-SG only)
 ```
 
-Only the ALB accepts public traffic; every rule past it references a security group, never a raw CIDR.
+Only the ALB accepts public traffic; every rule past it references a security group, never a raw CIDR. The EC2 role combines `AmazonSSMManagedInstanceCore` with one inline `secretsmanager:GetSecretValue` permission scoped to the exact RDS master-secret ARN.
 
 | Control | Status |
 |---|---|
@@ -108,7 +108,7 @@ On an AZ failure, the ALB stops routing to it and the ASG attempts a replacement
 
 ## Monitoring and Auditing
 
-The Terraform-managed stack defines 7 CloudWatch alarms, all notifying one SNS topic by email:
+The Terraform-managed stack defines 7 CloudWatch alarms. All alarms publish to one SNS topic; an email subscription is created only when `alarm_email` is supplied and the recipient confirms the SNS subscription.
 
 | Alarm | Metric |
 |---|---|
@@ -155,6 +155,19 @@ PowerShell: replace `cp` with `Copy-Item`. No domain or ACM certificate is requi
 
 Full workflow, deletion-protection notes, and troubleshooting: [`terraform/README.md`](terraform/README.md)
 
+## Evidence Boundary
+
+The repository contains two different kinds of evidence and they must not be read as interchangeable:
+
+| Evidence | Environment | Meaning |
+|---|---|---|
+| RDS failover, WAF blocking, SNS, SSM, and Flow Logs screenshots | Original manually built AWS environment | Demonstrates that the design was exercised manually; it does not by itself prove that Terraform recreated the same state. |
+| Terraform `fmt`, `init -backend=false`, and `validate` | Repository configuration | Demonstrates that the committed Terraform is syntactically valid and internally consistent without contacting the real backend. |
+| Terraform `plan` and `apply` | A real AWS account | Must be executed and recorded separately for each environment before claiming that the Terraform stack is deployed. |
+| Load-test scale-out results | Not claimed by default | Must include the actual command, timestamp, environment, ASG capacity change, p95 latency, and cleanup result. |
+
+The project is therefore presented as **production-inspired** until a real AWS deployment and repeatable validation record are attached to the Terraform-managed environment.
+
 ## Validation
 
 > Results below are from the original, manually built environment, before the Terraform migration. See [`docs/OPERATIONS.md`](docs/OPERATIONS.md) for running equivalent checks against the Terraform-deployed stack.
@@ -163,7 +176,7 @@ Full workflow, deletion-protection notes, and troubleshooting: [`terraform/READM
 |---|---|
 | RDS Multi-AZ failover | ✅ Completed in under one minute |
 | WAF XSS blocking | ✅ 539 of 699 test requests blocked in that run |
-| Auto Scaling | ✅ Maintained desired capacity across both AZs |
+| Auto Scaling | ✅ Original manual build maintained desired capacity across both AZs; Terraform adds CPU target tracking but requires a separate load-test run to prove scale-out |
 | SNS email alert | ✅ Delivered |
 | SSM Session Manager | ✅ No port 22, IAM-authenticated |
 | VPC Flow Logs / CloudTrail | ✅ Traffic and management events captured |
@@ -224,6 +237,7 @@ terraform destroy
 ## Author
 
 **Karim Rabie**
+
 Junior Cloud Engineer | AWS | Terraform | Docker | Cloud Infrastructure
 
 [LinkedIn](https://www.linkedin.com/in/karim-rabiee) · [GitHub](https://github.com/karimrabiee)

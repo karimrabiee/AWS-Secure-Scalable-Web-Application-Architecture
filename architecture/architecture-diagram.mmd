@@ -1,0 +1,47 @@
+flowchart LR
+  Internet((Internet)) --> WAF[AWS WAF<br/>Regional Web ACL]
+  WAF --> ALB[Application Load Balancer<br/>HTTP / HTTPS]
+
+  subgraph VPC[Production-inspired VPC 10.0.0.0/16]
+    subgraph AZA[Availability Zone A]
+      PubA[Public subnet A<br/>ALB / NAT]
+      AppA[Private app subnet A<br/>EC2 instance]
+      DBA[Private DB subnet A]
+      NATA[NAT Gateway A]
+    end
+    subgraph AZB[Availability Zone B]
+      PubB[Public subnet B<br/>ALB / NAT]
+      AppB[Private app subnet B<br/>EC2 instance]
+      DBB[Private DB subnet B]
+      NATB[NAT Gateway B]
+    end
+    ALB --> AppA
+    ALB --> AppB
+    AppA --> DBA
+    AppB --> DBB
+    AppA --> NATA
+    AppB --> NATB
+    DBA -.-> RDS[(RDS MySQL<br/>Multi-AZ in prod)]
+    DBB -.-> RDS
+  end
+
+  AppA -.-> Role[EC2 IAM role<br/>SSM ManagedInstanceCore<br/>+ GetSecretValue on exact RDS secret ARN]
+  AppB -.-> Role
+  Role --> SSM[AWS Systems Manager<br/>Session Manager / no SSH]
+  Role --> Secrets[AWS Secrets Manager<br/>RDS master secret]
+
+  ALB --> WAFLogs[WAF logs]
+  AppA --> Flow[VPC Flow Logs]
+  AppB --> Flow
+  Flow --> CW[CloudWatch Logs / Alarms]
+  CW --> SNS[SNS topic<br/>optional confirmed email]
+  CloudTrail[CloudTrail<br/>management events] --> Audit[(S3 audit bucket<br/>SSE-KMS + public access blocked)]
+
+  classDef edge fill:#e8f1ff,stroke:#2563eb,color:#111827
+  classDef private fill:#eaf7ee,stroke:#16a34a,color:#111827
+  classDef security fill:#fff7ed,stroke:#ea580c,color:#111827
+  classDef data fill:#f5f3ff,stroke:#7c3aed,color:#111827
+  class WAF,ALB edge
+  class AppA,AppB,DBA,DBB,NATA,NATB,PubA,PubB private
+  class Role,SSM,Secrets,WAFLogs,Flow,CW,SNS,CloudTrail security
+  class RDS,Audit data

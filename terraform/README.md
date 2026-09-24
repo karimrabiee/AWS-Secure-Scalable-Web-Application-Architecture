@@ -1,6 +1,6 @@
 # Terraform
 
-This directory codifies the architecture described in the root [`README.md`](../README.md) and [`docs/ARCHITECTURE.md`](../docs/ARCHITECTURE.md). It was built after the environment was first deployed manually through the AWS Console, so it reproduces that architecture rather than redesigning it.
+This directory codifies the production-inspired architecture described in the root [`README.md`](../README.md) and [`docs/ARCHITECTURE.md`](../docs/ARCHITECTURE.md). It was built after the environment was first deployed manually through the AWS Console, so it represents that architecture rather than claiming that every Terraform-managed resource has already been deployed and tested in a real account.
 
 ## Layout
 
@@ -37,6 +37,8 @@ Every variable has a sensible default except two, which are required on purpose:
 | `alarm_email` (recommended) | prod | Without a subscriber, alarms fire but reach nobody |
 
 Everything else — CIDRs, instance type, ASG limits, NAT Gateway count, `ami_id`, `certificate_arn`, WAF rate limit — has a working default and only needs to change when the default doesn't fit. See each environment's `terraform.tfvars.example`.
+
+The compute module enables CPU target tracking by default. It targets 60% average ASG CPU, scales only within `asg_min_size` and `asg_max_size`, and can be disabled with `enable_cpu_scaling = false`. A load test is still required to prove the behavior in a deployed account.
 
 ## Outputs
 

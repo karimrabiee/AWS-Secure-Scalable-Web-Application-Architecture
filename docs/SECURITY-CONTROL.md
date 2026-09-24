@@ -1,6 +1,6 @@
 # Security design reference
 
-This document describes every security control in this architecture, the threat it mitigates, and the AWS service that implements it.
+This document describes every security control in this production-inspired architecture, the threat it mitigates, and the AWS service that implements it. The controls describe the intended Terraform configuration; they are not a substitute for a deployed-account security review.
 
 ---
 
@@ -24,7 +24,7 @@ Security groups reference each other by group ID rather than IP ranges. This cre
 
 ```
 Internet
-  └─ ALB-SG (accepts :443 and :80 from 0.0.0.0/0)
+  └─ ALB-SG (accepts :80; :443 only when `certificate_arn` is configured)
        └─ EC2-SG (accepts :80 from ALB-SG only)
             └─ RDS-SG (accepts :3306 from EC2-SG only)
 ```
@@ -45,7 +45,7 @@ A Regional Web ACL is attached to the Application Load Balancer. The ACL include
 - HTTP protocol violations
 - File inclusion attacks
 
-WAF operates in **Block** mode after an initial period in **Count** mode to verify no false positives from legitimate traffic. WAF metrics are published to CloudWatch and sampled requests are visible in the WAF console.
+The Terraform configuration enables the three AWS managed rule groups and configures the rate-based rule with an explicit **Block** action. A separate Count-mode tuning phase is not claimed by this repository; any production rollout should test and tune managed rules before enabling them for real traffic. WAF metrics are published to CloudWatch and sampled requests are visible in the WAF console.
 
 ---
 
@@ -60,7 +60,7 @@ There is no SSH inbound rule anywhere in this architecture. EC2 instances are ac
 - Logs all session activity to CloudTrail
 - Works from the AWS Console or the AWS CLI (`aws ssm start-session`)
 
-The EC2 IAM role has only the `AmazonSSMManagedInstanceCore` policy, which provides the minimum permissions for SSM to function. There are no other policies attached.
+The EC2 IAM role has the AWS-managed `AmazonSSMManagedInstanceCore` policy for Session Manager and one additional inline policy. The inline policy grants only `secretsmanager:GetSecretValue` on the exact RDS master-secret ARN supplied to the compute module. It does not grant wildcard access to Secrets Manager.
 
 ### IMDSv2 enforcement
 
@@ -92,7 +92,7 @@ Encryption cannot be enabled after an RDS instance is created, which is why it i
 
 The audit log S3 bucket has:
 - All public access blocked
-- Default encryption (SSE-S3)
+- Default encryption (SSE-KMS using the AWS-managed S3 KMS key unless a customer-managed key is configured)
 - A bucket policy that only allows CloudTrail to write to it
 - Log file validation enabled on the trail (CloudTrail creates a digest file that lets you detect if log files are modified or deleted)
 
@@ -137,7 +137,7 @@ The CPU alarm at 70% for 5 minutes serves both an operational and a light securi
 
 | Principal | Permissions | Reason |
 |---|---|---|
-| EC2 instance role | `AmazonSSMManagedInstanceCore` only | SSM Agent needs these; nothing else |
+| EC2 instance role | `AmazonSSMManagedInstanceCore` plus `secretsmanager:GetSecretValue` on one exact ARN | Session Manager plus runtime retrieval of the RDS master secret |
 | CloudTrail | `s3:PutObject` to the audit bucket only | CloudTrail only needs to write logs |
 | VPC Flow Logs | `logs:CreateLogGroup`, `logs:CreateLogDelivery`, `logs:PutLogEvents` | Minimum to deliver flow logs |
 
@@ -150,7 +150,7 @@ No access keys are created. No IAM users are given console access to this specif
 | Threat | Mitigation |
 |---|---|
 | Web application attacks (SQLi, XSS) | AWS WAF with managed rules |
-| Unencrypted traffic interception | HTTPS enforcement via ACM + HTTP redirect |
+| Unencrypted traffic interception | HTTPS enforcement via ACM + HTTP redirect when `certificate_arn` is configured; HTTP-only mode remains available for bootstrap/dev |
 | Direct EC2 compromise from internet | Private subnets, no public IP, no inbound rule from internet |
 | Database exposure | DB-tier subnets have no internet route; RDS-SG accepts from EC2-SG only |
 | Unauthorized API access | CloudTrail logs all API calls; IAM least privilege |

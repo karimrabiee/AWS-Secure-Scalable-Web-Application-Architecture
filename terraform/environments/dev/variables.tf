@@ -73,6 +73,22 @@ variable "asg_max_size" {
   default = 4
 }
 
+variable "enable_cpu_scaling" {
+  description = "Enable ASG target tracking based on average CPU utilization."
+  type        = bool
+  default     = true
+}
+
+variable "cpu_target_percentage" {
+  description = "Target average CPU utilization for ASG target tracking."
+  type        = number
+  default     = 60
+  validation {
+    condition     = var.cpu_target_percentage > 0 && var.cpu_target_percentage < 100
+    error_message = "cpu_target_percentage must be greater than 0 and less than 100."
+  }
+}
+
 # Smallest viable class in dev - never the larger prod instance class here.
 variable "db_instance_class" {
   type    = string

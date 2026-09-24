@@ -56,6 +56,23 @@ variable "asg_max_size" {
   default = 4
 }
 
+variable "enable_cpu_scaling" {
+  description = "Enable target tracking that scales the ASG around the configured average CPU target."
+  type        = bool
+  default     = true
+}
+
+variable "cpu_target_percentage" {
+  description = "Average ASG CPU percentage that target tracking tries to maintain."
+  type        = number
+  default     = 60
+
+  validation {
+    condition     = var.cpu_target_percentage > 0 && var.cpu_target_percentage < 100
+    error_message = "cpu_target_percentage must be greater than 0 and less than 100."
+  }
+}
+
 variable "enable_instance_refresh" {
   description = "Roll instances automatically when the launch template changes (AMI update, user-data change) instead of manual replacement."
   type        = bool

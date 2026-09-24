@@ -69,22 +69,24 @@ module "database" {
 module "compute" {
   source = "../../modules/compute"
 
-  name_prefix          = local.name_prefix
-  launch_template_name = "Dev-LT"
-  asg_name             = "Dev-ASG"
-  app_subnet_ids       = module.networking.app_subnet_ids
-  app_sg_id            = module.security.app_sg_id
-  target_group_arn     = module.alb.target_group_arn
-  instance_type        = var.instance_type
-  ami_id               = var.ami_id
-  asg_min_size         = var.asg_min_size
-  asg_desired_capacity = var.asg_desired_capacity
-  asg_max_size         = var.asg_max_size
-  db_secret_arn        = module.database.master_user_secret_arn
-  db_address           = module.database.db_address
-  db_port              = module.database.db_port
-  db_name              = var.db_name
-  tags                 = local.tags
+  name_prefix           = local.name_prefix
+  launch_template_name  = "Dev-LT"
+  asg_name              = "Dev-ASG"
+  app_subnet_ids        = module.networking.app_subnet_ids
+  app_sg_id             = module.security.app_sg_id
+  target_group_arn      = module.alb.target_group_arn
+  instance_type         = var.instance_type
+  ami_id                = var.ami_id
+  asg_min_size          = var.asg_min_size
+  asg_desired_capacity  = var.asg_desired_capacity
+  asg_max_size          = var.asg_max_size
+  enable_cpu_scaling    = var.enable_cpu_scaling
+  cpu_target_percentage = var.cpu_target_percentage
+  db_secret_arn         = module.database.master_user_secret_arn
+  db_address            = module.database.db_address
+  db_port               = module.database.db_port
+  db_name               = var.db_name
+  tags                  = local.tags
 }
 
 module "monitoring" {
