@@ -79,7 +79,8 @@ resource "aws_db_instance" "main" {
 
   lifecycle {
     ignore_changes = [
-      final_snapshot_identifier, # contains a timestamp; regenerating it every plan is expected, not drift
+      final_snapshot_identifier,
     ]
-  }
+    prevent_destroy = true
+   }
 }

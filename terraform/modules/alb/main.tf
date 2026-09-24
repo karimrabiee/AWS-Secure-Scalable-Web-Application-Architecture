@@ -6,6 +6,7 @@ resource "aws_lb" "main" {
   security_groups    = [var.alb_sg_id]
   subnets            = var.public_subnet_ids
   tags               = merge(var.tags, { Name = var.alb_name })
+  
 }
 
 #target group for the app tier, which is the only tier that receives traffic from the ALB
