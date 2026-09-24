@@ -81,6 +81,6 @@ resource "aws_db_instance" "main" {
     ignore_changes = [
       final_snapshot_identifier,
     ]
-    prevent_destroy = true
-   }
+
+  }
 }
