@@ -224,6 +224,7 @@ terraform destroy
 ## Author
 
 **Karim Rabie**
+
 Junior Cloud Engineer | AWS | Terraform | Docker | Cloud Infrastructure
 
 [LinkedIn](https://www.linkedin.com/in/karim-rabiee) · [GitHub](https://github.com/karimrabiee)
