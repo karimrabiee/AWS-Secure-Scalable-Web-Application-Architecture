@@ -198,7 +198,7 @@ Full workflow, deletion-protection notes, and troubleshooting: [`terraform/READM
 | [`docs/COST-ANALYSIS.md`](docs/COST-ANALYSIS.md) | Cost breakdown and assumptions |
 | [`docs/TROUBLESHOOTING.md`](docs/TROUBLESHOOTING.md) | Issues hit and how they were resolved |
 | [`docs/DEPLOYMENT-GUIDE.md`](docs/DEPLOYMENT-GUIDE.md) | Original manual build, phase by phase |
-| [`docs/LESSONS_LEARNED.md`](docs/LESSONS_LEARNED.md) | Key takeaways from the migration |
+| [`docs/LESSONS-LEARNED.md`](docs/LESSONS-LEARNED.md) | Key takeaways from the migration |
 
 ## Cost
 
