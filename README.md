@@ -16,6 +16,37 @@
 
 ---
 
+## Architecture Evolution
+
+The project deliberately preserves the original architecture diagram created during the manual AWS design phase. It is shown first because it is a design artifact from the project author, not a generated Terraform rendering. The second diagram is the current Terraform-aligned reference view, updated after the migration to make implementation boundaries and evidence scope explicit.
+
+### 1. Original Manual Design — Human-authored Architecture Artifact
+
+![Original Manual AWS Architecture](architecture/architecture-diagram-original-manual.png)
+
+*Original design used during the manual AWS build and validation phase. Preserved from the initial repository commit for provenance and comparison.*
+
+### 2. Current Terraform-aligned Architecture
+
+![Current Terraform-aligned Architecture](architecture/architecture-diagram.png)
+
+*Current reference view. It reflects the documented Terraform design, including the scoped EC2 secret-read permission, SSE-KMS audit storage, observability paths, and the distinction between production-inspired design intent and deployed evidence.*
+
+### What changed between the two views?
+
+| Area | Original manual design | Current documented/Terraform-aligned view |
+|---|---|---|
+| Provenance | Design created for the manual AWS build | Original artifact preserved; Terraform-aligned view added for implementation clarity |
+| EC2 IAM role | `AmazonSSMManagedInstanceCore` was shown | SSM plus `secretsmanager:GetSecretValue` scoped to the exact RDS secret ARN |
+| Audit storage | S3 and CloudTrail were shown | S3 audit storage is documented as private and SSE-KMS encrypted |
+| Evidence | Manual build and validation screenshots | Manual evidence is explicitly separated from Terraform validation evidence |
+| Scaling claim | Auto Scaling Group was shown | Dynamic CPU scaling must be backed by an actual Terraform policy and a recorded load test |
+| Security posture | High-level security flow | Current documentation distinguishes optional HTTPS/dev bootstrap from enforced production hardening |
+
+The original diagram is retained as a historical design artifact; it is not presented as a literal one-to-one rendering of every current Terraform resource. The current diagram is the implementation reference.
+
+---
+
 ## The Problem
 
 A web application needs to stay available while keeping its servers and database off the public internet, with controlled access between tiers, no SSH exposure, and infrastructure that can be rebuilt reliably rather than reconstructed by hand.
@@ -42,8 +73,6 @@ A web application needs to stay available while keeping its servers and database
        CloudWatch ───► SNS        CloudTrail ───► S3
        Flow Logs  ───► CloudWatch  SSM ─────────► EC2
 ```
-
-![Architecture Diagram](architecture/architecture-diagram.png)
 
 | Layer | Design |
 |---|---|
@@ -205,6 +234,7 @@ The project is therefore presented as **production-inspired** until a real AWS d
 |---|---|
 | [`terraform/README.md`](terraform/README.md) | Terraform workflow and module reference |
 | [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md) | Full architecture detail |
+| [`docs/ARCHITECTURE-EVOLUTION.md`](docs/ARCHITECTURE-EVOLUTION.md) | Original manual diagram, current reference diagram, provenance, and change log |
 | [`docs/DECISIONS.md`](docs/DECISIONS.md) | Why each design choice was made |
 | [`docs/SECURITY-CONTROL.md`](docs/SECURITY-CONTROL.md) | Security design reference |
 | [`docs/OPERATIONS.md`](docs/OPERATIONS.md) | Deploying and testing the Terraform stack |
