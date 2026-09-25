@@ -4,9 +4,9 @@
 
 This document explains why the repository contains two architecture diagrams and how they should be interpreted. Keeping both views is intentional: the original diagram demonstrates the author's design work during the manual AWS build, while the current diagram provides a cleaner reference for the Terraform-aligned architecture.
 
-## Diagram 1 — Original Manual Design
+## Diagram 1 — initial Design
 
-![Original Manual AWS Architecture](../architecture/architecture-diagram-original-manual.png)
+![initial AWS Architecture](../architecture/architecture-diagram-original-manual.png)
 
 The original diagram was created during the manual AWS design and validation phase. It shows the author's initial reasoning about the VPC boundary, two Availability Zones, public and private subnets, ALB, NAT, EC2, RDS Multi-AZ, SSM, CloudWatch, CloudTrail, S3, SNS, and the security-group flow.
 
@@ -27,7 +27,7 @@ It also shows the private SSE-KMS audit bucket, the CloudTrail and VPC Flow Logs
 
 ## Change Log
 
-| Topic | Original manual design | Current Terraform-aligned documentation |
+| Topic | initial design | Current Terraform-aligned documentation |
 |---|---|---|
 | Design ownership | Original architecture drawing created for the manual build | Original drawing retained unchanged and shown first in the README |
 | Implementation reference | High-level design and manually validated environment | Terraform modules and environment-specific configuration are the implementation reference |
@@ -39,14 +39,14 @@ It also shows the private SSE-KMS audit bucket, the CloudTrail and VPC Flow Logs
 
 ## How to Present These Diagrams Professionally
 
-The README displays the original diagram first under **Original Manual Design — Human-authored Architecture Artifact**, followed by the current Terraform-aligned diagram. This order communicates progression rather than replacement:
+The README displays the original diagram first under **initial Design — Human-authored Architecture Artifact**, followed by the current Terraform-aligned diagram. This order communicates progression rather than replacement:
 
 1. **Design:** the author reasoned about the architecture and drew the initial solution.
 2. **Build and validate:** the design was implemented manually and exercised in AWS.
 3. **Codify:** the design was translated into reusable Terraform modules.
 4. **Harden the documentation:** implementation-specific permissions, encryption, and evidence boundaries were made explicit.
 
-The original diagram should be described as a **human-authored design artifact** or **original manual architecture diagram**. Avoid claiming that a repository alone proves that no AI or other tool was used; Git history demonstrates provenance and continuity, while authorship claims should remain truthful and personal.
+The original diagram should be described as a **human-authored design artifact** or **initial architecture diagram**. Avoid claiming that a repository alone proves that no AI or other tool was used; Git history demonstrates provenance and continuity, while authorship claims should remain truthful and personal.
 
 ## Evidence Boundary
 
