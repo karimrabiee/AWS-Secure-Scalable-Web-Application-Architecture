@@ -1,0 +1,5 @@
+# Optional account-level monthly budget limit in USD.
+budget_limit_usd = 5
+
+# Optional. Set through TF_VAR_budget_email instead if preferred.
+# budget_email = "you@example.com"

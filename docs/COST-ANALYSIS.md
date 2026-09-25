@@ -27,6 +27,10 @@ All prices are approximate and based on on-demand rates as of mid-2025. Prices v
 
 > The NAT Gateways account for roughly 58% of the total cost. Each NAT Gateway has a flat $0.045/hr charge plus $0.045/GB of data processed. For a learning or demo environment, this is the first service to destroy when not actively using the architecture.
 
+## Terraform budget guardrail
+
+The `terraform/bootstrap` stack creates one **account-level monthly AWS Budget** with a default limit of **USD 5**. It sends an email alert at **80% forecasted spend** and **100% actual spend** when `TF_VAR_budget_email` is supplied. The budget is intentionally managed in bootstrap rather than in `dev` or `prod`, because AWS Budgets apply at the account level and duplicating the resource in both environment states would create overlapping alerts. A budget is an alerting guardrail, not a hard spending cap; review the AWS Billing console and destroy idle resources when testing is complete.
+
 ---
 
 ## Cost decisions made during design
@@ -82,7 +86,7 @@ If you're running this for learning purposes and want to minimize cost:
 1. **Destroy resources when not actively testing.** `terraform destroy` or manually delete in this order: ASG → ALB + TG → RDS → NAT Gateways + EIPs → VPC.
 2. **Use a single NAT Gateway** if AZ-level outbound resilience is not required for your current test.
 3. **Stop RDS instead of deleting** if you want to preserve data between sessions. Stopped RDS instances do not incur instance-hour charges but continue to charge for storage and Multi-AZ standby.
-4. **Set an AWS Budgets alert at $5** so a forgotten resource cannot accumulate a large unexpected charge.
+4. **Keep the Terraform-managed $5 monthly AWS Budget enabled** so forecasted or actual spend triggers an alert before a forgotten resource accumulates a larger unexpected charge.
 5. **Check the Free Tier dashboard** in the Billing console regularly. The first 12 months of a new account include 750 hours/month of t3.micro EC2 and 750 hours/month of db.t3.micro RDS (single-AZ only — Multi-AZ is not covered by the Free Tier).
 
 ---

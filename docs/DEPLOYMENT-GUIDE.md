@@ -9,7 +9,7 @@ All resources are in `us-east-1`. Set a billing alert before starting — NAT Ga
 ## Phase 0 — Prerequisites
 
 - Log in as an IAM user with administrator permissions (not root).
-- In AWS Budgets, create a monthly budget with an email alert at $10.
+- In AWS Budgets, create a monthly budget with an email alert at $5 (or apply the Terraform-managed budget from `terraform/bootstrap`).
 - Set default region to `us-east-1` in the console.
 
 ---
@@ -156,7 +156,7 @@ RDS takes 5–10 minutes to become available.
 | Security group | EC2-SG |
 | IAM instance profile | `Production-EC2-SSM-Role` |
 
-**User data** — the full script is in [`scripts/user-data.sh`](../scripts/user-data.sh). It installs Apache, starts it on boot, and reports the instance's Availability Zone using the IMDSv2 token-based metadata API. This makes AZ-failure testing easy to verify: just refresh the page and check which AZ is answering.
+**User data** — the Terraform template is in [`terraform/modules/compute/user-data.sh.tftpl`](../terraform/modules/compute/user-data.sh.tftpl). It installs the application, starts it on boot, and reports the instance's Availability Zone using the IMDSv2 token-based metadata API. This makes AZ-failure testing easy to verify: just refresh the page and check which AZ is answering.
 
 ---
 
@@ -237,4 +237,4 @@ Both alarms → SNS `Production-Alerts`.
 
 ## Phase 15 — Validation
 
-Run the 7 tests documented in the [README validation section](../README.md#validation-tests) before considering the project complete.
+Run the 7 tests documented in the [README validation section](../README.md#validation) before considering the project complete.

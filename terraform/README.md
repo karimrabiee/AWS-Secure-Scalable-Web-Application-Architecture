@@ -6,7 +6,7 @@ This directory codifies the production-inspired architecture described in the ro
 
 ```text
 terraform/
-├── bootstrap/            # Creates the S3 state bucket. Run once, keeps its own local state.
+├── bootstrap/            # Creates the S3 state bucket and one account-level monthly budget.
 ├── environments/
 │   ├── dev/               # Low-cost settings: 1 NAT, single-AZ RDS, no default cert.
 │   └── prod/               # Multi-AZ, 2 NAT Gateways, deletion protection on.
@@ -26,6 +26,8 @@ terraform/
 ## Remote state and backend
 
 Both environments use an S3 backend with native state locking (`use_lockfile = true`, Terraform >= 1.10 — no DynamoDB table). The bucket is created once by `bootstrap/` and shared by both environments under different state keys. The real bucket name is never committed: it is supplied through a local, gitignored `backend.hcl` (copy it from the matching `backend.hcl.example`).
+
+The bootstrap state also manages one account-level monthly AWS Budget. It defaults to a USD 5 limit and creates 80% forecasted and 100% actual email alerts only when `budget_email` is supplied through `TF_VAR_budget_email` or a local, gitignored tfvars file. Because AWS Budgets are account-level, do not duplicate this resource in the `dev` and `prod` states.
 
 ## Variables
 
@@ -53,6 +55,8 @@ terraform validate
 terraform plan
 terraform apply
 ```
+
+Before applying bootstrap, review the account-wide budget limit and optionally set `TF_VAR_budget_email` for alerts.
 
 To remove an environment:
 

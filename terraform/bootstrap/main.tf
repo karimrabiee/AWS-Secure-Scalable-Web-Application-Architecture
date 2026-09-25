@@ -23,6 +23,23 @@ variable "project_name" {
   default = "ecomm-platform"
 }
 
+variable "budget_limit_usd" {
+  description = "Monthly account-level AWS Budget limit in USD. This covers the account, not only Terraform resources."
+  type        = number
+  default     = 5
+
+  validation {
+    condition     = var.budget_limit_usd > 0
+    error_message = "budget_limit_usd must be greater than zero."
+  }
+}
+
+variable "budget_email" {
+  description = "Optional email address for AWS Budget alerts. Set via TF_VAR_budget_email or a local, gitignored tfvars file."
+  type        = string
+  default     = null
+}
+
 provider "aws" {
   region = var.aws_region
 }
@@ -107,6 +124,44 @@ resource "aws_s3_bucket_policy" "tfstate" {
   policy = data.aws_iam_policy_document.tfstate_bucket_policy.json
 }
 
+# AWS Budgets are account-level resources. Keep one budget in bootstrap so
+# dev and prod do not create duplicate account-wide budgets.
+resource "aws_budgets_budget" "monthly_account" {
+  name         = "${var.project_name}-monthly-account-budget"
+  budget_type  = "COST"
+  limit_amount = tostring(var.budget_limit_usd)
+  limit_unit   = "USD"
+  time_unit    = "MONTHLY"
+
+  dynamic "notification" {
+    for_each = var.budget_email == null ? [] : [var.budget_email]
+
+    content {
+      comparison_operator        = "GREATER_THAN"
+      threshold                  = 80
+      threshold_type             = "PERCENTAGE"
+      notification_type          = "FORECASTED"
+      subscriber_email_addresses = [notification.value]
+    }
+  }
+
+  dynamic "notification" {
+    for_each = var.budget_email == null ? [] : [var.budget_email]
+
+    content {
+      comparison_operator        = "GREATER_THAN"
+      threshold                  = 100
+      threshold_type             = "PERCENTAGE"
+      notification_type          = "ACTUAL"
+      subscriber_email_addresses = [notification.value]
+    }
+  }
+}
+
 output "bucket_name" {
   value = aws_s3_bucket.tfstate.bucket
+}
+
+output "monthly_budget_name" {
+  value = aws_budgets_budget.monthly_account.name
 }
