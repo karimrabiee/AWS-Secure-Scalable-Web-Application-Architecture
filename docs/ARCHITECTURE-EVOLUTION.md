@@ -6,11 +6,11 @@ This document explains why the repository contains two architecture diagrams and
 
 ## Diagram 1 — initial Design
 
-![initial AWS Architecture](../architecture/architecture-diagram-original-manual.png)
+![initial AWS Architecture](../architecture/initial-architecture-diagram.png)
 
 The original diagram was created during the manual AWS design and validation phase. It shows the author's initial reasoning about the VPC boundary, two Availability Zones, public and private subnets, ALB, NAT, EC2, RDS Multi-AZ, SSM, CloudWatch, CloudTrail, S3, SNS, and the security-group flow.
 
-The file is preserved under `architecture/architecture-diagram-original-manual.png`. It was recovered from the original repository commit and is retained unchanged as a historical design artifact. Its Git history provides repository provenance; it should not be described as a machine-generated rendering.
+The file is preserved under `architecture/initial-architecture-diagram.png`. It was recovered from the original repository commit and is retained unchanged as a historical design artifact. Its Git history provides repository provenance; it should not be described as a machine-generated rendering.
 
 ## Diagram 2 — Current Terraform-aligned Reference
 
@@ -61,7 +61,7 @@ The recommended language is:
 Keep the original image as a separate file rather than overwriting it. The recommended filenames are:
 
 ```text
-architecture/architecture-diagram-original-manual.png
+architecture/initial-architecture-diagram.png
 architecture/architecture-diagram.png
 architecture/architecture-diagram.mmd
 ```
