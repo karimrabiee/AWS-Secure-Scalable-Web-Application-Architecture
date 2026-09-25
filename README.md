@@ -18,13 +18,13 @@
 
 ## Architecture Evolution
 
-The project deliberately preserves the original architecture diagram created during the manual AWS design phase. It is shown first because it is a design artifact from the project author, not a generated Terraform rendering. The second diagram is the current Terraform-aligned reference view, updated after the migration to make implementation boundaries and evidence scope explicit.
+The project deliberately preserves the initialarchitecture diagram created during the manual AWS design phase. It is shown first because it is a design artifact from the project author, not a generated Terraform rendering. The second diagram is the current Terraform-aligned reference view, updated after the migration to make implementation boundaries and evidence scope explicit.
 
-### 1. Original Manual Design — Human-authored Architecture Artifact
+### 1. Initial architecture diagram
 
-![Original Manual AWS Architecture](architecture/architecture-diagram-original-manual.png)
+![Initial AWS Architecture](architecture/initial-architecture-diagram.png)
 
-*Original design used during the manual AWS build and validation phase. Preserved from the initial repository commit for provenance and comparison.*
+*Initial design used during the manual AWS build and validation phase. Preserved from the initial repository commit for provenance and comparison.*
 
 ### 2. Current Terraform-aligned Architecture
 
@@ -34,16 +34,16 @@ The project deliberately preserves the original architecture diagram created dur
 
 ### What changed between the two views?
 
-| Area | Original manual design | Current documented/Terraform-aligned view |
+| Area | initial design | Current documented/Terraform-aligned view |
 |---|---|---|
-| Provenance | Design created for the manual AWS build | Original artifact preserved; Terraform-aligned view added for implementation clarity |
+| Provenance | Design created for the manual AWS build | initial artifact preserved; Terraform-aligned view added for implementation clarity |
 | EC2 IAM role | `AmazonSSMManagedInstanceCore` was shown | SSM plus `secretsmanager:GetSecretValue` scoped to the exact RDS secret ARN |
 | Audit storage | S3 and CloudTrail were shown | S3 audit storage is documented as private and SSE-KMS encrypted |
 | Evidence | Manual build and validation screenshots | Manual evidence is explicitly separated from Terraform validation evidence |
 | Scaling claim | Auto Scaling Group was shown | Dynamic CPU scaling must be backed by an actual Terraform policy and a recorded load test |
 | Security posture | High-level security flow | Current documentation distinguishes optional HTTPS/dev bootstrap from enforced production hardening |
 
-The original diagram is retained as a historical design artifact; it is not presented as a literal one-to-one rendering of every current Terraform resource. The current diagram is the implementation reference.
+The initial diagram is retained as a historical design artifact; it is not presented as a literal one-to-one rendering of every current Terraform resource. The current diagram is the implementation reference.
 
 ---
 
@@ -87,7 +87,7 @@ A web application needs to stay available while keeping its servers and database
 
 ## Project Specifications
 
-| | Original validated build | Terraform (`dev` / `prod`) |
+| | initial validated build | Terraform (`dev` / `prod`) |
 |---|---|---|
 | Region | `us-east-1` | Variable, defaults `us-east-1` |
 | VPC / AZs | `10.0.0.0/16`, 2 AZs, 6 subnets | Same |
@@ -190,7 +190,7 @@ The repository contains two different kinds of evidence and they must not be rea
 
 | Evidence | Environment | Meaning |
 |---|---|---|
-| RDS failover, WAF blocking, SNS, SSM, and Flow Logs screenshots | Original manually built AWS environment | Demonstrates that the design was exercised manually; it does not by itself prove that Terraform recreated the same state. |
+| RDS failover, WAF blocking, SNS, SSM, and Flow Logs screenshots | initial manually built AWS environment | Demonstrates that the design was exercised manually; it does not by itself prove that Terraform recreated the same state. |
 | Terraform `fmt`, `init -backend=false`, and `validate` | Repository configuration | Demonstrates that the committed Terraform is syntactically valid and internally consistent without contacting the real backend. |
 | Terraform `plan` and `apply` | A real AWS account | Must be executed and recorded separately for each environment before claiming that the Terraform stack is deployed. |
 | Load-test scale-out results | Not claimed by default | Must include the actual command, timestamp, environment, ASG capacity change, p95 latency, and cleanup result. |
@@ -199,13 +199,13 @@ The project is therefore presented as **production-inspired** until a real AWS d
 
 ## Validation
 
-> Results below are from the original, manually built environment, before the Terraform migration. See [`docs/OPERATIONS.md`](docs/OPERATIONS.md) for running equivalent checks against the Terraform-deployed stack.
+> Results below are from the initial, manually built environment, before the Terraform migration. See [`docs/OPERATIONS.md`](docs/OPERATIONS.md) for running equivalent checks against the Terraform-deployed stack.
 
 | Test | Result |
 |---|---|
 | RDS Multi-AZ failover | ✅ Completed in under one minute |
 | WAF XSS blocking | ✅ 539 of 699 test requests blocked in that run |
-| Auto Scaling | ✅ Original manual build maintained desired capacity across both AZs; Terraform adds CPU target tracking but requires a separate load-test run to prove scale-out |
+| Auto Scaling | ✅ initial manual build maintained desired capacity across both AZs; Terraform adds CPU target tracking but requires a separate load-test run to prove scale-out |
 | SNS email alert | ✅ Delivered |
 | SSM Session Manager | ✅ No port 22, IAM-authenticated |
 | VPC Flow Logs / CloudTrail | ✅ Traffic and management events captured |
@@ -234,18 +234,18 @@ The project is therefore presented as **production-inspired** until a real AWS d
 |---|---|
 | [`terraform/README.md`](terraform/README.md) | Terraform workflow and module reference |
 | [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md) | Full architecture detail |
-| [`docs/ARCHITECTURE-EVOLUTION.md`](docs/ARCHITECTURE-EVOLUTION.md) | Original manual diagram, current reference diagram, provenance, and change log |
+| [`docs/ARCHITECTURE-EVOLUTION.md`](docs/ARCHITECTURE-EVOLUTION.md) | initial diagram, current reference diagram, provenance, and change log |
 | [`docs/DECISIONS.md`](docs/DECISIONS.md) | Why each design choice was made |
 | [`docs/SECURITY-CONTROL.md`](docs/SECURITY-CONTROL.md) | Security design reference |
 | [`docs/OPERATIONS.md`](docs/OPERATIONS.md) | Deploying and testing the Terraform stack |
 | [`docs/COST-ANALYSIS.md`](docs/COST-ANALYSIS.md) | Cost breakdown and assumptions |
 | [`docs/TROUBLESHOOTING.md`](docs/TROUBLESHOOTING.md) | Issues hit and how they were resolved |
-| [`docs/DEPLOYMENT-GUIDE.md`](docs/DEPLOYMENT-GUIDE.md) | Original manual build, phase by phase |
+| [`docs/DEPLOYMENT-GUIDE.md`](docs/DEPLOYMENT-GUIDE.md) | initial build, phase by phase |
 | [`docs/LESSONS-LEARNED.md`](docs/LESSONS-LEARNED.md) | Key takeaways from the migration |
 
 ## Cost
 
-Main drivers: RDS, NAT Gateways, ALB, WAF, CloudWatch. `dev` defaults to the cheaper end (1 NAT, single-AZ RDS, `db.t3.micro`); `prod` requires an explicit instance class rather than a silent default. A historical hourly estimate for the original validated configuration is documented in [`docs/COST-ANALYSIS.md`](docs/COST-ANALYSIS.md) — actual AWS pricing varies by region, usage, and time, so treat any number there as a point-in-time estimate, not current pricing. Destroy environments when not in use; NAT Gateways and RDS bill hourly regardless of traffic.
+Main drivers: RDS, NAT Gateways, ALB, WAF, CloudWatch. `dev` defaults to the cheaper end (1 NAT, single-AZ RDS, `db.t3.micro`); `prod` requires an explicit instance class rather than a silent default. A historical hourly estimate for the initialvalidated configuration is documented in [`docs/COST-ANALYSIS.md`](docs/COST-ANALYSIS.md) — actual AWS pricing varies by region, usage, and time, so treat any number there as a point-in-time estimate, not current pricing. Destroy environments when not in use; NAT Gateways and RDS bill hourly regardless of traffic.
 
 ## Future Improvements
 
