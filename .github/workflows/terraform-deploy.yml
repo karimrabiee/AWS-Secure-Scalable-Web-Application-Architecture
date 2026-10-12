@@ -1,0 +1,83 @@
+name: Terraform deploy (manual)
+
+on:
+  workflow_dispatch:
+    inputs:
+      environment:
+        description: Terraform environment to plan/apply
+        required: true
+        type: choice
+        options: [dev, prod]
+      apply:
+        description: Apply the reviewed plan (requires environment approval)
+        required: true
+        type: boolean
+        default: false
+
+permissions:
+  contents: read
+  id-token: write
+
+jobs:
+  plan:
+    name: Plan ${{ inputs.environment }}
+    runs-on: ubuntu-22.04
+    environment: ${{ inputs.environment }}
+    env:
+      TF_IN_AUTOMATION: 'true'
+      TF_INPUT: 'false'
+    steps:
+      - uses: actions/checkout@v4
+      - uses: hashicorp/setup-terraform@v3
+        with:
+          terraform_version: '1.10.5'
+      - uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ vars.AWS_DEPLOY_ROLE_ARN }}
+          aws-region: ${{ vars.AWS_REGION || 'us-east-1' }}
+      - name: Terraform init
+        working-directory: terraform/environments/${{ inputs.environment }}
+        run: terraform init -input=false -backend-config="bucket=${{ vars.TF_STATE_BUCKET }}" -backend-config="key=${{ vars.TF_STATE_KEY_PREFIX }}/${{ inputs.environment }}.tfstate" -backend-config="region=${{ vars.AWS_REGION || 'us-east-1' }}"
+      - name: Terraform validate
+        working-directory: terraform/environments/${{ inputs.environment }}
+        run: terraform validate -no-color
+      - name: Terraform plan
+        working-directory: terraform/environments/${{ inputs.environment }}
+        run: terraform plan -input=false -out=tfplan
+      - uses: actions/upload-artifact@v4
+        with:
+          name: terraform-plan-${{ inputs.environment }}
+          path: terraform/environments/${{ inputs.environment }}/tfplan
+          retention-days: 5
+
+  apply:
+    name: Apply ${{ inputs.environment }}
+    if: ${{ inputs.apply == true }}
+    needs: plan
+    runs-on: ubuntu-22.04
+    environment: ${{ inputs.environment }}
+    permissions:
+      contents: read
+      id-token: write
+    env:
+      TF_IN_AUTOMATION: 'true'
+      TF_INPUT: 'false'
+    steps:
+      - uses: actions/checkout@v4
+      - uses: hashicorp/setup-terraform@v3
+        with:
+          terraform_version: '1.10.5'
+      - uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ vars.AWS_DEPLOY_ROLE_ARN }}
+          aws-region: ${{ vars.AWS_REGION || 'us-east-1' }}
+      - uses: actions/download-artifact@v4
+        with:
+          name: terraform-plan-${{ inputs.environment }}
+          path: terraform/environments/${{ inputs.environment }}
+      - name: Terraform init
+        working-directory: terraform/environments/${{ inputs.environment }}
+        run: terraform init -input=false -backend-config="bucket=${{ vars.TF_STATE_BUCKET }}" -backend-config="key=${{ vars.TF_STATE_KEY_PREFIX }}/${{ inputs.environment }}.tfstate" -backend-config="region=${{ vars.AWS_REGION || 'us-east-1' }}"
+      - name: Apply reviewed plan
+        working-directory: terraform/environments/${{ inputs.environment }}
+        run: terraform apply -input=false tfplan

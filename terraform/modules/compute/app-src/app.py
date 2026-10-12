@@ -1,31 +1,34 @@
-import json
 import logging
 import os
-from datetime import date, datetime
-from decimal import Decimal
 from pathlib import Path
 
 from flask import Flask, render_template_string
 
 app = Flask(__name__)
+logger = logging.getLogger(__name__)
 logging.basicConfig(level=os.getenv("LOG_LEVEL", "INFO"))
 
+AZ_PATH = Path("/var/lib/app/az.txt")
+INSTANCE_ID_PATH = Path("/var/lib/app/instance-id.txt")
 
-def read_text(path: str, fallback: str = "unknown") -> str:
+
+def read_text(path: str | Path, fallback: str = "unknown") -> str:
     try:
-        return Path(path).read_text().strip() or fallback
-    except OSError:
+        return Path(path).read_text(encoding="utf-8").strip() or fallback
+    except OSError as error:
+        logger.warning("Unable to read application metadata file %s: %s", path, error)
         return fallback
 
 
 @app.get("/")
 def index():
-    az = read_text("/var/lib/app/az.txt")
-    instance_id = read_text("/var/lib/app/instance-id.txt")
+    az = read_text(AZ_PATH)
+    instance_id = read_text(INSTANCE_ID_PATH)
     return render_template_string(
         """<!doctype html>
 <html lang="en">
-<head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><title>Client Platform</title></head>
+<head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Client Platform</title></head>
 <body>
   <main>
     <h1>Secure, Highly Available Web Platform</h1>

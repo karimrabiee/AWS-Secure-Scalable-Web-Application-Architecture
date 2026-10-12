@@ -51,7 +51,7 @@ Security group chain: `ALB-SG ← 0.0.0.0/0` (80 always, 443 once a certificate 
 | VPC Flow Logs | Network traffic records sent to CloudWatch Logs |
 | S3 | Terraform state (separate bucket) and CloudTrail logs |
 
-No Route 53, no mandatory ACM, no CloudFront, no ECS/EKS, no CI/CD in this project — a deliberate choice, see `DECISIONS.md`.
+No Route 53, no mandatory ACM, no CloudFront, no ECS/EKS, and no automatic AWS deployment. The repository does include credential-free CI validation and a separate, manually triggered OIDC deployment workflow; see `docs/CI-CD.md`.
 
 ## High availability
 

@@ -242,14 +242,21 @@ The project is therefore presented as **production-inspired** until a real AWS d
 | [`docs/TROUBLESHOOTING.md`](docs/TROUBLESHOOTING.md) | Issues hit and how they were resolved |
 | [`docs/DEPLOYMENT-GUIDE.md`](docs/DEPLOYMENT-GUIDE.md) | Initial build, phase by phase |
 | [`docs/LESSONS-LEARNED.md`](docs/LESSONS-LEARNED.md) | Key takeaways from the migration |
+| [`docs/CI-CD.md`](docs/CI-CD.md) | CI checks, optional gated CD, and local commands |
+| [`docs/VERIFICATION-REPORT.md`](docs/VERIFICATION-REPORT.md) | Executed checks, evidence, and limitations |
+| [`docs/CHANGE-SUMMARY.md`](docs/CHANGE-SUMMARY.md) | Delivered changes and manual setup requirements |
 
 ## Cost
 
 Main drivers: RDS, NAT Gateways, ALB, WAF, CloudWatch. `dev` defaults to the cheaper end (1 NAT, single-AZ RDS, `db.t3.micro`); `prod` requires an explicit instance class rather than a silent default. A historical hourly estimate for the initial validated configuration is documented in [`docs/COST-ANALYSIS.md`](docs/COST-ANALYSIS.md) — actual AWS pricing varies by region, usage, and time, so treat any number there as a point-in-time estimate, not current pricing. Destroy environments when not in use; NAT Gateways and RDS bill hourly regardless of traffic.
 
+## CI/CD and Repository Readiness
+
+GitHub Actions CI now validates Python, runs the Flask test suite, checks Terraform formatting, initializes each Terraform root with the backend disabled, and validates bootstrap/dev/prod without AWS credentials. A separate `workflow_dispatch` Terraform workflow provides an optional OIDC-based plan/apply path; it never runs on ordinary pushes or pull requests and requires protected GitHub Environment configuration. See [`docs/CI-CD.md`](docs/CI-CD.md) for the exact setup and local commands.
+
 ## Future Improvements
 
-HTTPS + Route 53 + ACM · GitHub Actions CI/CD · load testing at higher concurrency · ECS/Fargate migration for the application tier.
+HTTPS + ACM · load testing at higher concurrency · ECS/Fargate migration for the application tier. Route 53 remains intentionally outside this implementation scope.
 
 ## Cleanup
 
@@ -271,5 +278,3 @@ terraform destroy
 Junior Cloud Engineer | AWS | Terraform | Docker | Cloud Infrastructure
 
 [LinkedIn](https://www.linkedin.com/in/karim-rabiee) · [GitHub](https://github.com/karimrabiee)
-
-

@@ -60,7 +60,7 @@ The original environment was built by hand through the Console. When Terraform i
 
 ## 11. Services kept out of scope
 
-No domain, Route 53, or ACM certificate is required today. No CloudFront, Kubernetes, ECS, CI/CD, or multi-region setup. These are not gaps — they are deliberate choices to keep cost and complexity down for what this project needs to demonstrate.
+No domain, Route 53, or ACM certificate is required today. No CloudFront, Kubernetes, ECS, or multi-region setup is included. These are deliberate choices to keep the AWS architecture cost and complexity down. The repository now has lightweight CI validation and an optional manually triggered OIDC deployment workflow; this automation does not add another runtime AWS service.
 
 ## 12. One NAT Gateway per AZ in production
 
@@ -70,6 +70,6 @@ A single NAT Gateway shared by both AZs would make instances in one AZ depend on
 
 The WAF rate-based rule blocks an IP after it crosses `waf_rate_limit_per_5min` requests, evaluated over a rolling five-minute window. This is a coarse defense against floods and scanners — it is not a precise per-second rate limiter, and it is not a substitute for a CDN or a dedicated bot-management service.
 
-## 14. IAM scope on the state bucket, and no CI/CD role yet
+## 14. IAM scope on the state bucket and optional CI/CD role
 
-The bootstrap state bucket currently denies only insecure (non-HTTPS) access; it is not yet scoped to a specific operator role or CI/CD identity, because none exists in this project. CI/CD (Phase 4, see the root README's *Future Improvements*) is intentionally deferred — adding a pipeline before there is a real deployment cadence to automate would add moving parts without a matching benefit. When a CI/CD role is introduced, the bucket policy should be narrowed to that role plus the individual operators who need it.
+The bootstrap state bucket currently denies only insecure (non-HTTPS) access; it is not scoped to a specific operator role or CI/CD identity by Terraform because the real account and principals are intentionally unknown. The optional deployment workflow requires the repository owner to create a dedicated least-privilege OIDC role and restrict its trust policy to this repository and protected environment. The state bucket policy should then be narrowed to that role plus the individual operators who need it.

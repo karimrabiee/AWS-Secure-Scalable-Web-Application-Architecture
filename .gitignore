@@ -23,8 +23,11 @@ backend.hcl
 # Never commit a working directory's cache/binaries
 **/.terraform/
 **/__pycache__/
+**/.pytest_cache/
+**/.ruff_cache/
 *.py[cod]
 .venv/
+.venv*/
 venv/
 .env
 .env.*
@@ -44,4 +47,3 @@ discovery-output.txt
 .vscode/
 *.swp
 .DS_Store
-
