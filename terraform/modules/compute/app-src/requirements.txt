@@ -1,5 +1,8 @@
+<<<<<<< HEAD
 # Direct runtime dependencies and their transitive dependencies are pinned so
 # a fresh EC2 bootstrap resolves the same tested package set.
+=======
+>>>>>>> 71250862fd348fd167e0e034b6f505b43e8e9250
 Flask==3.1.3
 gunicorn==23.0.0
 blinker==1.9.0

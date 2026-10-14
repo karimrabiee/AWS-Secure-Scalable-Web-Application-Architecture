@@ -7,6 +7,8 @@
 [![RDS](https://img.shields.io/badge/RDS-MySQL_Multi--AZ-527FFF?style=flat-square&logo=amazonaws&logoColor=white)](https://aws.amazon.com/rds/)
 [![WAF](https://img.shields.io/badge/WAF-Managed_Rules-DD344C?style=flat-square&logo=amazonaws&logoColor=white)](https://aws.amazon.com/waf/)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg?style=flat-square)](LICENSE)
+[![CI](https://github.com/karimrabiee/AWS-Secure-Scalable-Web-Application-Architecture/actions/workflows/ci.yml/badge.svg)](https://github.com/karimrabiee/AWS-Secure-Scalable-Web-Application-Architecture/actions/workflows/ci.yml)
+[![Terraform deploy (manual)](https://github.com/karimrabiee/AWS-Secure-Scalable-Web-Application-Architecture/actions/workflows/terraform-deploy.yml/badge.svg)](https://github.com/karimrabiee/AWS-Secure-Scalable-Web-Application-Architecture/actions/workflows/terraform-deploy.yml)
 
 </div>
 
@@ -30,14 +32,22 @@ The project deliberately preserves the initial architecture diagram created duri
 
 ![Current Terraform-aligned Architecture](architecture/architecture-diagram.png)
 
+<<<<<<< HEAD
 *Current reference view. It reflects the Terraform design, including SSM-only instance management, private application/database tiers, SSE-KMS audit storage, observability paths, and the distinction between production-inspired design intent and deployed evidence.*
+=======
+*Current reference view. It reflects the documented Terraform design, including SSM-only instance administration, SSE-KMS audit storage, observability paths, and the distinction between production-inspired design intent and deployed evidence.*
+>>>>>>> 71250862fd348fd167e0e034b6f505b43e8e9250
 
 ### What changed between the two views?
 
 | Area | Initial design | Current documented/Terraform-aligned view |
 |---|---|---|
 | Provenance | Design created for the manual AWS build | Initial artifact preserved; Terraform-aligned view added for implementation clarity |
+<<<<<<< HEAD
 | EC2 IAM role | `AmazonSSMManagedInstanceCore` was shown | `AmazonSSMManagedInstanceCore` only; unused RDS master-secret access is not granted to the sample app |
+=======
+| EC2 IAM role | `AmazonSSMManagedInstanceCore` was shown | SSM-only access; the sample app does not consume RDS credentials |
+>>>>>>> 71250862fd348fd167e0e034b6f505b43e8e9250
 | Audit storage | S3 and CloudTrail were shown | S3 audit storage is documented as private and SSE-KMS encrypted |
 | Evidence | Manual build and validation screenshots | Manual evidence is explicitly separated from Terraform validation evidence |
 | Scaling claim | Auto Scaling Group was shown | Dynamic CPU scaling must be backed by an actual Terraform policy and a recorded load test |
@@ -109,7 +119,11 @@ Internet → ALB-SG (80, and 443 once a certificate exists, from 0.0.0.0/0)
         → RDS-SG (port 3306, from EC2-SG only)
 ```
 
+<<<<<<< HEAD
 Only the ALB accepts public traffic; every rule past it references a security group, never a raw CIDR. The Terraform-managed EC2 role uses `AmazonSSMManagedInstanceCore` for Session Manager and does not receive RDS master credentials because the current sample app does not query the database.
+=======
+Only the ALB accepts public traffic; every rule past it references a security group, never a raw CIDR. The EC2 role uses `AmazonSSMManagedInstanceCore` only; the sample app does not read the RDS master secret.
+>>>>>>> 71250862fd348fd167e0e034b6f505b43e8e9250
 
 | Control | Status |
 |---|---|
@@ -117,7 +131,7 @@ Only the ALB accepts public traffic; every rule past it references a security gr
 | RDS private, no internet route | ✅ |
 | No SSH — SSM Session Manager only | ✅ |
 | IMDSv2 enforced, hop limit 1 | ✅ |
-| IAM least privilege (SSM + one scoped Secrets Manager ARN) | ✅ |
+| IAM least privilege (SSM-only application instance role) | ✅ |
 | AWS WAF — managed rules + rate limiting | ✅ |
 | RDS encryption at rest, automated backups | ✅ |
 | CloudTrail + VPC Flow Logs | ✅ |
@@ -246,14 +260,25 @@ The project is therefore presented as **production-inspired** until a real AWS d
 | [`docs/TROUBLESHOOTING.md`](docs/TROUBLESHOOTING.md) | Issues hit and how they were resolved |
 | [`docs/DEPLOYMENT-GUIDE.md`](docs/DEPLOYMENT-GUIDE.md) | Initial build, phase by phase |
 | [`docs/LESSONS-LEARNED.md`](docs/LESSONS-LEARNED.md) | Key takeaways from the migration |
+| [`docs/CI-CD.md`](docs/CI-CD.md) | CI checks, optional gated CD, and local commands |
+| [`docs/VERIFICATION-REPORT.md`](docs/VERIFICATION-REPORT.md) | Executed checks, evidence, and limitations |
+| [`docs/CHANGE-SUMMARY.md`](docs/CHANGE-SUMMARY.md) | Delivered changes and manual setup requirements |
 
 ## Cost
 
 Main drivers: RDS, NAT Gateways, ALB, WAF, CloudWatch. `dev` defaults to the cheaper end (1 NAT, single-AZ RDS, `db.t3.micro`); `prod` requires an explicit instance class rather than a silent default. A historical hourly estimate for the initial validated configuration is documented in [`docs/COST-ANALYSIS.md`](docs/COST-ANALYSIS.md) — actual AWS pricing varies by region, usage, and time, so treat any number there as a point-in-time estimate, not current pricing. Destroy environments when not in use; NAT Gateways and RDS bill hourly regardless of traffic.
 
+## CI/CD and Repository Readiness
+
+GitHub Actions CI now validates Python, runs the Flask test suite, checks Terraform formatting, initializes each Terraform root with the backend disabled, and validates bootstrap/dev/prod without AWS credentials. A separate `workflow_dispatch` Terraform workflow provides an optional OIDC-based plan/apply path; it never runs on ordinary pushes or pull requests and requires protected GitHub Environment configuration. See [`docs/CI-CD.md`](docs/CI-CD.md) for the exact setup and local commands.
+
 ## Future Improvements
 
+<<<<<<< HEAD
 HTTPS + Route 53 + ACM · GitHub Actions AWS deployment automation (CI validation exists; no automatic apply) · load testing at higher concurrency · ECS/Fargate migration for the application tier.
+=======
+HTTPS + ACM · load testing at higher concurrency · ECS/Fargate migration for the application tier. Route 53 remains intentionally outside this implementation scope.
+>>>>>>> 71250862fd348fd167e0e034b6f505b43e8e9250
 
 ## Cleanup
 
@@ -275,5 +300,3 @@ terraform destroy
 Junior Cloud Engineer | AWS | Terraform | Docker | Cloud Infrastructure
 
 [LinkedIn](https://www.linkedin.com/in/karim-rabiee) · [GitHub](https://github.com/karimrabiee)
-
-

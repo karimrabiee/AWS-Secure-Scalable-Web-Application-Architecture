@@ -1,5 +1,8 @@
+<<<<<<< HEAD
 from __future__ import annotations
 
+=======
+>>>>>>> 71250862fd348fd167e0e034b6f505b43e8e9250
 import logging
 import os
 from pathlib import Path
@@ -8,12 +11,25 @@ from typing import Union
 from flask import Flask, render_template_string
 
 app = Flask(__name__)
+logger = logging.getLogger(__name__)
 logging.basicConfig(level=os.getenv("LOG_LEVEL", "INFO"))
 logger = logging.getLogger(__name__)
 
+AZ_PATH = Path("/var/lib/app/az.txt")
+INSTANCE_ID_PATH = Path("/var/lib/app/instance-id.txt")
 
+<<<<<<< HEAD
 def read_text(path: Union[str, Path], fallback: str = "unknown") -> str:
     """Read optional instance metadata; missing/unreadable files are non-fatal."""
+=======
+
+def read_text(path: Union[str, Path], fallback: str = "unknown") -> str:
+    """Read optional instance metadata without failing the web process.
+
+    Union[] is intentionally used instead of the newer PEP 604 union syntax
+    because the supported Amazon Linux runtime may provide Python 3.9.
+    """
+>>>>>>> 71250862fd348fd167e0e034b6f505b43e8e9250
     try:
         return Path(path).read_text(encoding="utf-8").strip() or fallback
     except OSError as error:
@@ -23,12 +39,13 @@ def read_text(path: Union[str, Path], fallback: str = "unknown") -> str:
 
 @app.get("/")
 def index():
-    az = read_text("/var/lib/app/az.txt")
-    instance_id = read_text("/var/lib/app/instance-id.txt")
+    az = read_text(AZ_PATH)
+    instance_id = read_text(INSTANCE_ID_PATH)
     return render_template_string(
         """<!doctype html>
 <html lang="en">
-<head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><title>Client Platform</title></head>
+<head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Client Platform</title></head>
 <body>
   <main>
     <h1>Secure, Highly Available Web Platform</h1>
@@ -44,7 +61,7 @@ def index():
 
 @app.get("/health")
 def health():
-    # Keep the ALB health check independent from the database.
+    # The endpoint is intentionally independent of the optional RDS tier.
     return "OK", 200, {"Content-Type": "text/plain; charset=utf-8"}
 
 

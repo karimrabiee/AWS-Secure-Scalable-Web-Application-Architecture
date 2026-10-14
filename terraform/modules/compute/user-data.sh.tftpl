@@ -1,13 +1,45 @@
 #!/bin/bash
 set -Eeuo pipefail
+<<<<<<< HEAD
 
 # Keep cloud-init diagnostics available without enabling shell tracing (which
 # could expose future sensitive values in command arguments).
 exec > >(tee -a /var/log/ecomm-app-bootstrap.log | logger -t ecomm-app-bootstrap -s 2>/dev/console) 2>&1
+=======
+
+log() {
+  printf '[ecomm-bootstrap] %s\n' "$*" | tee -a /var/log/ecomm-bootstrap.log
+}
+
+on_error() {
+  local line=$1
+  log "Bootstrap failed at line $${line}; inspect /var/log/ecomm-bootstrap.log and cloud-init-output.log"
+}
+trap 'on_error $LINENO' ERR
+
+retry() {
+  local attempts=$1
+  local delay=$2
+  shift 2
+  local attempt=1
+  until "$@"; do
+    if (( attempt >= attempts )); then
+      return 1
+    fi
+    log "Command failed; retry $${attempt}/$${attempts} in $${delay}s"
+    sleep "$delay"
+    attempt=$((attempt + 1))
+  done
+}
+
+# Small, understandable application runtime: Nginx -> Gunicorn -> Flask.
+retry 5 10 dnf install -y nginx python3 python3-pip
+>>>>>>> 71250862fd348fd167e0e034b6f505b43e8e9250
 
 APP_DIR=/opt/ecomm-app
 mkdir -p "$APP_DIR" /var/lib/app
 
+<<<<<<< HEAD
 # Amazon Linux 2023 supplies Python 3.9 by default in the currently deployed
 # environment. The application is intentionally compatible with Python 3.9.
 dnf install -y nginx python3 python3-pip curl
@@ -51,6 +83,50 @@ chown -R root:root "$APP_DIR"
 chmod -R go-w "$APP_DIR"
 chown -R ecomm-app:ecomm-app /var/lib/app
 chmod 755 "$APP_DIR"
+=======
+# The application supports the Amazon Linux 2023 Python 3.9 runtime.
+PYTHON_BIN=/usr/bin/python3
+"$PYTHON_BIN" --version | tee -a /var/log/ecomm-bootstrap.log
+"$PYTHON_BIN" -c 'import sys; assert sys.version_info >= (3, 9), sys.version'
+
+# IMDSv2 metadata is optional presentation data; failure must not prevent the
+# application from starting or make the ALB report a false outage.
+read_metadata() {
+  local token value
+  token=$(curl --silent --fail --max-time 5 -X PUT \
+    -H "X-aws-ec2-metadata-token-ttl-seconds: 60" \
+    http://169.254.169.254/latest/api/token) || return 1
+  value=$(curl --silent --fail --max-time 5 \
+    -H "X-aws-ec2-metadata-token: $${token}" "$1") || return 1
+  printf '%s' "$${value}"
+}
+
+AZ=unknown
+INSTANCE_ID=unknown
+if AZ=$(retry 3 2 read_metadata http://169.254.169.254/latest/meta-data/placement/availability-zone); then
+  :
+else
+  log "Availability-zone metadata unavailable; using fallback"
+  AZ=unknown
+fi
+if INSTANCE_ID=$(retry 3 2 read_metadata http://169.254.169.254/latest/meta-data/instance-id); then
+  :
+else
+  log "Instance-id metadata unavailable; using fallback"
+  INSTANCE_ID=unknown
+fi
+echo -n "$${AZ}" > /var/lib/app/az.txt
+echo -n "$${INSTANCE_ID}" > /var/lib/app/instance-id.txt
+
+# Terraform embeds application source and public dependency pins, not secrets.
+echo '${app_py_b64}' | base64 -d > "$APP_DIR/app.py"
+echo '${requirements_b64}' | base64 -d > "$APP_DIR/requirements.txt"
+retry 3 10 "$PYTHON_BIN" -m venv "$APP_DIR/venv"
+retry 5 10 "$APP_DIR/venv/bin/pip" install --no-cache-dir -r "$APP_DIR/requirements.txt"
+
+id ecomm-app &>/dev/null || useradd --system --home-dir "$APP_DIR" --shell /sbin/nologin ecomm-app
+chown -R ecomm-app:ecomm-app "$APP_DIR" /var/lib/app
+>>>>>>> 71250862fd348fd167e0e034b6f505b43e8e9250
 
 cat > /etc/systemd/system/ecomm-app.service <<'SERVICE'
 [Unit]
@@ -119,6 +195,7 @@ systemctl enable ecomm-app nginx
 systemctl restart ecomm-app
 systemctl restart nginx
 
+<<<<<<< HEAD
 # Final end-to-end local checks before cloud-init completes.
 for attempt in {1..20}; do
   if curl --fail --silent --show-error http://127.0.0.1:8000/health >/dev/null \
@@ -133,3 +210,9 @@ echo "Application failed post-start health checks; inspect systemd and bootstrap
 systemctl --no-pager --full status ecomm-app nginx || true
 journalctl -u ecomm-app -n 100 --no-pager || true
 exit 1
+=======
+# Do not finish bootstrap until the local application can actually serve the
+# same endpoint used by the ALB target-group health check.
+retry 12 5 curl --silent --fail --max-time 5 http://127.0.0.1/health >/dev/null
+log "Bootstrap completed; local /health returned HTTP 200"
+>>>>>>> 71250862fd348fd167e0e034b6f505b43e8e9250

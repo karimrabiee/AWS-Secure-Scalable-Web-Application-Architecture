@@ -45,6 +45,11 @@ resource "aws_iam_instance_profile" "ec2_ssm" {
   role = aws_iam_role.ec2_ssm.name
 }
 
+<<<<<<< HEAD
+=======
+# this policy grants the EC2 instance permission to read the database secret from Secrets Manager,
+#  so it can connect to the RDS instance.
+>>>>>>> 71250862fd348fd167e0e034b6f505b43e8e9250
 resource "aws_launch_template" "app" {
   name          = var.launch_template_name
   image_id      = local.resolved_ami_id

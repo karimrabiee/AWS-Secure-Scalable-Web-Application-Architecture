@@ -97,10 +97,10 @@ resource "aws_s3_bucket_lifecycle_configuration" "tfstate" {
   }
 }
 
-# Restrict who can touch the bucket further once a specific operator
-# IAM role/permission set is defined (see docs/DECISIONS.md,
-# "IAM least privilege"). No CI/CD-specific role exists yet - this project
-# deliberately defers CI/CD, see docs/DECISIONS.md.
+# Restrict who can touch the bucket further once a specific operator or
+# optional CI/CD IAM role/permission set is defined (see docs/DECISIONS.md,
+# "IAM least privilege"). Account-specific principals are intentionally not
+# invented in this reusable portfolio configuration.
 data "aws_iam_policy_document" "tfstate_bucket_policy" {
   statement {
     sid    = "DenyInsecureTransport"
