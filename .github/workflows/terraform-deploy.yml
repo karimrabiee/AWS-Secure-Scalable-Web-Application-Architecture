@@ -35,6 +35,9 @@ jobs:
         with:
           role-to-assume: ${{ vars.AWS_DEPLOY_ROLE_ARN }}
           aws-region: ${{ vars.AWS_REGION || 'us-east-1' }}
+      - name: Verify AWS identity
+        run: aws sts get-caller-identity
+
       - name: Terraform init
         working-directory: terraform/environments/${{ inputs.environment }}
         run: terraform init -input=false -backend-config="bucket=${{ vars.TF_STATE_BUCKET }}" -backend-config="key=${{ vars.TF_STATE_KEY_PREFIX }}/${{ inputs.environment }}.tfstate" -backend-config="region=${{ vars.AWS_REGION || 'us-east-1' }}"
@@ -49,6 +52,23 @@ jobs:
           name: terraform-plan-${{ inputs.environment }}
           path: terraform/environments/${{ inputs.environment }}/tfplan
           retention-days: 5
+      - name: Apply reviewed plan
+        working-directory: terraform/environments/${{ inputs.environment }}
+        run: |
+          if [ "${{ inputs.environment }}" = "prod" ]; then
+            test -n "$DEPLOY_DB_INSTANCE_CLASS" || {
+              echo "TF_DB_INSTANCE_CLASS is required for prod" >&2
+              exit 1
+            }
+            export TF_VAR_db_instance_class="$DEPLOY_DB_INSTANCE_CLASS"
+          fi
+
+          if [ -n "$DEPLOY_ALARM_EMAIL" ]; then
+            export TF_VAR_alarm_email="$DEPLOY_ALARM_EMAIL"
+          fi
+
+          terraform apply -input=false tfplan
+
 
   apply:
     name: Apply ${{ inputs.environment }}
