@@ -20,13 +20,13 @@ The sample application is a small Flask app in `terraform/modules/compute/app-sr
 
 ## 5. Secrets and SSM
 
-RDS generates and manages the master password in AWS Secrets Manager. At boot,
-the instance's user data fetches it through an IAM role scoped to
-secretsmanager:GetSecretValue on exactly one secret ARN — never a wildcard —
-and writes it to a local, root:app-owned, 640-permission file. This
-demonstrates the credential-delivery pattern; the current sample app does not
-call the database itself. No password exists in Git, Terraform variables, or
-user data source code.
+RDS still manages its master password in AWS Secrets Manager, but the current
+sample application has no database client, query, or route. The EC2 bootstrap
+therefore does not fetch or write the unused RDS secret, and the instance role
+uses the AWS-managed SSM policy only. If database-backed application behavior
+is added later, it must introduce an explicit client, tests, and a narrowly
+scoped secret-read policy as a separate reviewed change. No password exists in
+Git, Terraform variables, or user-data source code.
 
 ## 6. AMI auto-discovery, with an explicit-pin option
 

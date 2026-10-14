@@ -1,52 +1,79 @@
 #!/bin/bash
-set -euo pipefail
+set -Eeuo pipefail
+
+log() {
+  printf '[ecomm-bootstrap] %s\n' "$*" | tee -a /var/log/ecomm-bootstrap.log
+}
+
+on_error() {
+  local line=$1
+  log "Bootstrap failed at line $${line}; inspect /var/log/ecomm-bootstrap.log and cloud-init-output.log"
+}
+trap 'on_error $LINENO' ERR
+
+retry() {
+  local attempts=$1
+  local delay=$2
+  shift 2
+  local attempt=1
+  until "$@"; do
+    if (( attempt >= attempts )); then
+      return 1
+    fi
+    log "Command failed; retry $${attempt}/$${attempts} in $${delay}s"
+    sleep "$delay"
+    attempt=$((attempt + 1))
+  done
+}
 
 # Small, understandable application runtime: Nginx -> Gunicorn -> Flask.
-dnf install -y nginx python3 python3-pip jq awscli
+retry 5 10 dnf install -y nginx python3 python3-pip
 
 APP_DIR=/opt/ecomm-app
-CONFIG_DIR=/etc/ecomm-app
-mkdir -p "$APP_DIR" "$CONFIG_DIR" /var/lib/app
+mkdir -p "$APP_DIR" /var/lib/app
 
-# IMDSv2 metadata is used only for the demo page; instances remain private.
-TOKEN=$(curl --silent --fail --max-time 5 -X PUT \
-  -H "X-aws-ec2-metadata-token-ttl-seconds: 60" \
-  http://169.254.169.254/latest/api/token)
-AZ=$(curl --silent --fail --max-time 5 \
-  -H "X-aws-ec2-metadata-token: $${TOKEN}" \
-  http://169.254.169.254/latest/meta-data/placement/availability-zone)
-INSTANCE_ID=$(curl --silent --fail --max-time 5 \
-  -H "X-aws-ec2-metadata-token: $${TOKEN}" \
-  http://169.254.169.254/latest/meta-data/instance-id)
+# The application supports the Amazon Linux 2023 Python 3.9 runtime.
+PYTHON_BIN=/usr/bin/python3
+"$PYTHON_BIN" --version | tee -a /var/log/ecomm-bootstrap.log
+"$PYTHON_BIN" -c 'import sys; assert sys.version_info >= (3, 9), sys.version'
+
+# IMDSv2 metadata is optional presentation data; failure must not prevent the
+# application from starting or make the ALB report a false outage.
+read_metadata() {
+  local token value
+  token=$(curl --silent --fail --max-time 5 -X PUT \
+    -H "X-aws-ec2-metadata-token-ttl-seconds: 60" \
+    http://169.254.169.254/latest/api/token) || return 1
+  value=$(curl --silent --fail --max-time 5 \
+    -H "X-aws-ec2-metadata-token: $${token}" "$1") || return 1
+  printf '%s' "$${value}"
+}
+
+AZ=unknown
+INSTANCE_ID=unknown
+if AZ=$(retry 3 2 read_metadata http://169.254.169.254/latest/meta-data/placement/availability-zone); then
+  :
+else
+  log "Availability-zone metadata unavailable; using fallback"
+  AZ=unknown
+fi
+if INSTANCE_ID=$(retry 3 2 read_metadata http://169.254.169.254/latest/meta-data/instance-id); then
+  :
+else
+  log "Instance-id metadata unavailable; using fallback"
+  INSTANCE_ID=unknown
+fi
 echo -n "$${AZ}" > /var/lib/app/az.txt
 echo -n "$${INSTANCE_ID}" > /var/lib/app/instance-id.txt
 
-# Terraform embeds application source, not secrets.
+# Terraform embeds application source and public dependency pins, not secrets.
 echo '${app_py_b64}' | base64 -d > "$APP_DIR/app.py"
 echo '${requirements_b64}' | base64 -d > "$APP_DIR/requirements.txt"
-python3 -m venv "$APP_DIR/venv"
-"$APP_DIR/venv/bin/pip" install --no-cache-dir -r "$APP_DIR/requirements.txt"
-
-# Fetch the RDS credentials at boot through the instance role. The secret is
-# written as JSON with jq so special characters in a password remain safe.
-SECRET_JSON=$(aws secretsmanager get-secret-value \
-  --secret-id '${db_secret_arn}' \
-  --query SecretString --output text)
-DB_USER=$(echo "$${SECRET_JSON}" | jq -r .username)
-DB_PASS=$(echo "$${SECRET_JSON}" | jq -r .password)
-jq -n \
-  --arg host '${db_address}' \
-  --arg port '${db_port}' \
-  --arg name '${db_name}' \
-  --arg user "$${DB_USER}" \
-  --arg password "$${DB_PASS}" \
-  '{host:$host, port:($port|tonumber), name:$name, user:$user, password:$password}' \
-  > "$CONFIG_DIR/db.json"
-chmod 640 "$CONFIG_DIR/db.json"
+retry 3 10 "$PYTHON_BIN" -m venv "$APP_DIR/venv"
+retry 5 10 "$APP_DIR/venv/bin/pip" install --no-cache-dir -r "$APP_DIR/requirements.txt"
 
 id ecomm-app &>/dev/null || useradd --system --home-dir "$APP_DIR" --shell /sbin/nologin ecomm-app
 chown -R ecomm-app:ecomm-app "$APP_DIR" /var/lib/app
-chown root:ecomm-app "$CONFIG_DIR/db.json"
 
 cat > /etc/systemd/system/ecomm-app.service <<'SERVICE'
 [Unit]
@@ -88,3 +115,8 @@ systemctl daemon-reload
 systemctl enable --now ecomm-app
 systemctl enable --now nginx
 systemctl restart nginx
+
+# Do not finish bootstrap until the local application can actually serve the
+# same endpoint used by the ALB target-group health check.
+retry 12 5 curl --silent --fail --max-time 5 http://127.0.0.1/health >/dev/null
+log "Bootstrap completed; local /health returned HTTP 200"

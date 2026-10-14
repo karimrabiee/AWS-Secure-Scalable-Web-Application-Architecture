@@ -32,14 +32,14 @@ The project deliberately preserves the initial architecture diagram created duri
 
 ![Current Terraform-aligned Architecture](architecture/architecture-diagram.png)
 
-*Current reference view. It reflects the documented Terraform design, including the scoped EC2 secret-read permission, SSE-KMS audit storage, observability paths, and the distinction between production-inspired design intent and deployed evidence.*
+*Current reference view. It reflects the documented Terraform design, including SSM-only instance administration, SSE-KMS audit storage, observability paths, and the distinction between production-inspired design intent and deployed evidence.*
 
 ### What changed between the two views?
 
 | Area | Initial design | Current documented/Terraform-aligned view |
 |---|---|---|
 | Provenance | Design created for the manual AWS build | Initial artifact preserved; Terraform-aligned view added for implementation clarity |
-| EC2 IAM role | `AmazonSSMManagedInstanceCore` was shown | SSM plus `secretsmanager:GetSecretValue` scoped to the exact RDS secret ARN |
+| EC2 IAM role | `AmazonSSMManagedInstanceCore` was shown | SSM-only access; the sample app does not consume RDS credentials |
 | Audit storage | S3 and CloudTrail were shown | S3 audit storage is documented as private and SSE-KMS encrypted |
 | Evidence | Manual build and validation screenshots | Manual evidence is explicitly separated from Terraform validation evidence |
 | Scaling claim | Auto Scaling Group was shown | Dynamic CPU scaling must be backed by an actual Terraform policy and a recorded load test |
@@ -111,7 +111,7 @@ Internet → ALB-SG (80, and 443 once a certificate exists, from 0.0.0.0/0)
         → RDS-SG (port 3306, from EC2-SG only)
 ```
 
-Only the ALB accepts public traffic; every rule past it references a security group, never a raw CIDR. The EC2 role combines `AmazonSSMManagedInstanceCore` with one inline `secretsmanager:GetSecretValue` permission scoped to the exact RDS master-secret ARN.
+Only the ALB accepts public traffic; every rule past it references a security group, never a raw CIDR. The EC2 role uses `AmazonSSMManagedInstanceCore` only; the sample app does not read the RDS master secret.
 
 | Control | Status |
 |---|---|
@@ -119,7 +119,7 @@ Only the ALB accepts public traffic; every rule past it references a security gr
 | RDS private, no internet route | ✅ |
 | No SSH — SSM Session Manager only | ✅ |
 | IMDSv2 enforced, hop limit 1 | ✅ |
-| IAM least privilege (SSM + one scoped Secrets Manager ARN) | ✅ |
+| IAM least privilege (SSM-only application instance role) | ✅ |
 | AWS WAF — managed rules + rate limiting | ✅ |
 | RDS encryption at rest, automated backups | ✅ |
 | CloudTrail + VPC Flow Logs | ✅ |

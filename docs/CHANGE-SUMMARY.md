@@ -17,6 +17,10 @@
 - Independently corrected stale architecture and decision-record statements about CI/CD.
 - Added `.pytest_cache/` and `.ruff_cache/` exclusions after observing those generated directories locally.
 - Excluded the supplied AI instruction file from the public release archive.
+- Fixed the Python 3.9-incompatible `str | Path` annotation that caused Gunicorn workers to fail during import and produce ALB 502 responses.
+- Hardened EC2 bootstrap with bounded retries, optional IMDS metadata fallbacks, explicit runtime logging, service startup checks, and a local `/health` verification.
+- Removed unused RDS secret retrieval, database JSON generation, and the corresponding EC2 Secrets Manager permission because the sample Flask app has no database consumer.
+- Added Python 3.9 coverage to CI so the deployed Amazon Linux runtime is tested explicitly.
 
 ## Deliberately not changed
 

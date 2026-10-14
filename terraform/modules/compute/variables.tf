@@ -79,25 +79,6 @@ variable "enable_instance_refresh" {
   default     = true
 }
 
-variable "db_secret_arn" {
-  description = "ARN of the Secrets Manager secret holding the RDS master credentials (module.database.master_user_secret_arn). The EC2 role is granted secretsmanager:GetSecretValue scoped to exactly this ARN - nothing broader."
-  type        = string
-}
-
-variable "db_address" {
-  description = "RDS hostname (not secret - the security boundary is the security group, not hiding the endpoint)."
-  type        = string
-}
-
-variable "db_port" {
-  type    = number
-  default = 3306
-}
-
-variable "db_name" {
-  type = string
-}
-
 variable "tags" {
   type    = map(string)
   default = {}

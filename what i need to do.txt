@@ -1,0 +1,448 @@
+# Senior Cloud Infrastructure Engineer & DevSecOps Auditor — End-to-End Project Repair
+
+## 1. Role and Mission
+
+Act as a Senior AWS Cloud Architect, Terraform Engineer, Python Engineer, DevSecOps Engineer, and Production Readiness Auditor.
+
+Your task is to perform a **deep, evidence-based, end-to-end audit and repair** of the existing repository:
+
+`AWS-Secure-Scalable-Web-Application-Architecture`
+
+The project is a Terraform-managed, production-inspired AWS three-tier web application architecture. It includes networking, security groups, ALB, WAF, EC2 Auto Scaling, RDS, Secrets Manager, monitoring, security services, remote Terraform state, and separate dev/prod environments.
+
+Your mission is to make the project as reliable, secure, consistent, testable, and maintainable as reasonably possible **within the project's existing architecture, scope, budget, and available AWS resources**.
+
+Do not merely generate recommendations. Inspect the repository, modify the actual files, execute available tests, verify the results, and produce a comprehensive final audit report.
+
+Do not claim that the project is production-ready unless the evidence supports that conclusion.
+
+## 2. Critical Known Incident — Investigate First
+
+An AWS EC2 instance returned `502 Bad Gateway` through Nginx and the Application Load Balancer.
+
+Observed evidence:
+
+- Nginx was running and listening on port 80.
+- Nginx proxied requests to `http://127.0.0.1:8000`.
+- Port 8000 had no functioning application listener.
+- `ecomm-app.service` repeatedly restarted because Gunicorn workers failed to boot.
+- AWS system logs showed:
+
+`TypeError: unsupported operand type(s) for |: 'type' and 'type'`
+
+The traceback pointed to a function annotation similar to:
+
+`def read_text(path: str | Path, fallback: str = "unknown") -> str:`
+
+The affected instance was running Python 3.9.25, which does not support this annotation syntax without deferred annotation evaluation.
+
+However, the supplied repository copy appears to differ from the application code observed on the EC2 instance. **Investigate the discrepancy instead of assuming the local repository is identical to the deployed artifact.**
+
+Trace the complete application delivery path:
+
+- Application source files
+- Terraform module file paths and file provisioning logic
+- `user-data.sh.tftpl`
+- Launch Template configuration and versions
+- Auto Scaling Group configuration and refresh behavior
+- systemd service definition
+- Nginx configuration
+- Python runtime version and dependency installation
+- ALB target group health checks
+- Relevant IAM permissions and Secrets Manager integration
+
+Fix the actual source of the failure so newly launched instances cannot reproduce it.
+
+Do not solve the incident by changing security groups, weakening health checks, hiding errors, or manually fixing only one EC2 instance.
+
+## 3. Mandatory Working Rules
+
+1. Start by inspecting the repository structure, Git status, existing changes, Terraform modules, environments, application source, templates, scripts, tests, and documentation.
+
+2. Preserve existing user changes. Never overwrite unrelated work or discard uncommitted changes.
+
+3. Establish a baseline before modifying files. Record existing test results and validation failures.
+
+4. Build an inventory of findings with:
+   - Unique finding ID
+   - Severity: Critical, High, Medium, Low, or Informational
+   - File and line number where possible
+   - Evidence
+   - Root cause
+   - Proposed correction
+   - Verification method
+
+5. Fix verified defects rather than making speculative changes.
+
+6. Do not perform broad rewrites, unnecessary refactoring, or architecture changes unrelated to a demonstrated issue.
+
+7. Do not expose, print, commit, or include actual passwords, secret values, private keys, access tokens, database credentials, or sensitive Terraform state contents in logs or the final report.
+
+8. Never run `terraform destroy`, delete databases, delete S3 state objects, remove security logs, or destroy existing infrastructure.
+
+9. Do not automatically apply infrastructure changes to AWS. First repair and validate the source code and generate a reviewable Terraform plan when appropriate.
+
+10. Do not modify live AWS infrastructure unless explicitly authorized and the intended changes, impact, cost, and rollback plan have been reviewed.
+
+11. Never claim that a command succeeded unless it was actually executed and its result inspected.
+
+12. If a test requires AWS access, unavailable infrastructure, paid resources, or external credentials, clearly distinguish it from tests that can run locally.
+
+13. Keep changes small, understandable, auditable, and suitable for a junior Cloud Engineer to explain in an interview.
+
+14. Before changing any resource that may replace or recreate infrastructure, inspect the Terraform plan and identify potential data loss, downtime, cost, and replacement impact.
+
+## 4. Phase One — Repository and Architecture Audit
+
+Inspect the complete repository, including at least:
+
+- Terraform bootstrap and remote backend configuration
+- Dev and prod environments
+- Networking module
+- Security module
+- ALB and WAF modules
+- Compute and Auto Scaling module
+- Database module
+- Monitoring module
+- Security services
+- IAM roles and policies
+- User Data templates
+- Application files
+- GitHub Actions workflows, if present
+- Terraform variables, outputs, locals, and module interfaces
+- README, architecture diagrams, operational instructions, and decision records
+
+Identify:
+
+- Invalid Terraform syntax or unsupported arguments
+- Missing variables, outputs, module inputs, or resources
+- Inconsistent variable types and defaults
+- Hard-coded environment-specific values
+- Incorrect resource dependencies
+- Invalid references or incorrect resource naming
+- Unsafe security group rules
+- Excessive IAM permissions
+- Unused IAM permissions and unused secrets
+- State backend and locking inconsistencies
+- Environment configuration drift
+- Incorrect health checks or target group settings
+- Unreliable instance initialization
+- Application runtime incompatibilities
+- Dependency and package installation failures
+- Misleading documentation
+- Missing validation, tests, and deployment safeguards
+
+Do not infer a defect solely from a resource name. Verify the configuration and its actual behavior.
+
+## 5. Phase Two — Repair the Application and EC2 Bootstrap
+
+Investigate and correct the complete EC2 initialization process.
+
+Requirements:
+
+- Ensure the selected Python version supports all syntax used by the application.
+- Alternatively, make the code explicitly compatible with the existing supported runtime.
+- Keep runtime dependencies pinned and reproducible.
+- Verify the Gunicorn application import path and working directory.
+- Ensure the systemd service uses the intended non-root application user.
+- Verify file ownership and read/write permissions.
+- Remove conflicting default Nginx configurations where justified.
+- Verify Nginx syntax before restarting the service.
+- Ensure the application listens on the expected local port.
+- Implement bounded health-check retries during initialization.
+- Log useful startup errors without exposing secrets.
+- Ensure bootstrap failures are observable instead of silently ignored.
+- Ensure the application service starts reliably after reboot.
+- Ensure the ALB health endpoint returns HTTP 200 only when the application process can serve requests.
+- Keep the health endpoint independent of optional database dependencies if that matches the architecture.
+
+Inspect whether the application is intended to use RDS.
+
+If the application does not use RDS, remove unnecessary database-secret retrieval and associated permissions, environment variables, files, and documentation only after confirming that they are genuinely unused.
+
+If database integration is an explicit project requirement, implement and test it deliberately instead of leaving unused credentials or incomplete configuration.
+
+Do not change the existing application purpose without documenting the reason.
+
+## 6. Phase Three — Terraform Correctness and Safety
+
+For every Terraform environment and module:
+
+- Run formatting and syntax validation.
+- Verify module input/output contracts.
+- Verify resource references and dependency ordering.
+- Check for accidental resource replacement.
+- Review lifecycle rules and `create_before_destroy` usage where relevant.
+- Verify launch template version handling.
+- Verify Auto Scaling Group health-check settings and deployment behavior.
+- Verify the ALB target group port, protocol, health path, matcher, and timeout configuration.
+- Verify security group relationships between ALB, EC2, and RDS.
+- Verify private instance management access and the intended SSM access path.
+- Verify RDS encryption, backup retention, deletion protection, and Multi-AZ settings against environment requirements.
+- Verify S3 backend encryption, access restrictions, state locking, and recovery considerations.
+- Verify CloudTrail, VPC Flow Logs, CloudWatch, SNS, WAF, and other security-service configuration.
+- Review dev/prod differences and ensure they are intentional.
+- Check resource naming, tags, outputs, and variable defaults.
+- Identify avoidable costs without weakening essential security or availability controls.
+
+Preserve the current architecture unless a verified defect requires a change.
+
+Do not silently downgrade security controls, remove monitoring, or reduce availability merely to make validation pass.
+
+Do not add expensive services or a new architecture without justification and explicit approval.
+
+## 7. Phase Four — Security Audit
+
+Perform a focused security review of:
+
+- IAM least privilege
+- EC2 instance roles
+- SSM permissions
+- Secrets Manager permissions
+- Public versus private subnet exposure
+- ALB ingress and instance ingress rules
+- Database network isolation
+- SSH and key-pair usage
+- S3 public access and encryption
+- Remote Terraform state access
+- Sensitive values in variables, outputs, logs, User Data, and Git history
+- CloudTrail and network flow logging
+- WAF rules and logging
+- Security group and IAM policy wildcards
+- Dependency versions and package installation practices
+
+Do not reveal secret values while checking them.
+
+Use available security tools, such as Checkov, tfsec, Trivy, or equivalent tools, if already installed or installable without compromising the environment. Report tool versions, results, exceptions, and untested areas.
+
+Treat scanner findings as findings to investigate, not automatically as proof of vulnerabilities.
+
+Do not add broad IAM permissions simply to make a failing command work.
+
+## 8. Phase Five — Tests and CI/CD
+
+Create or improve automated tests appropriate to this repository.
+
+### Application tests
+
+Test at least:
+
+- The home page returns the expected successful response.
+- `/health` returns HTTP 200 and the expected body.
+- Missing metadata files are handled safely.
+- Expected filesystem errors do not crash the application.
+- The application can be imported using the selected runtime.
+- Tests do not require real AWS credentials or production database access.
+
+### Terraform checks
+
+Run, where applicable:
+
+- `terraform fmt -check -recursive`
+- `terraform init -backend=false`
+- `terraform validate`
+- `terraform test` if the project supports meaningful tests
+- `terraform plan` using the actual configured backend only when safe and authorized
+- Static security scanning
+
+Validate bootstrap, dev, and prod independently where their structure requires it.
+
+### GitHub Actions
+
+If a workflow is absent, add a minimal, maintainable CI workflow that:
+
+- Runs application tests.
+- Validates Terraform formatting and configuration.
+- Runs appropriate security checks.
+- Uses explicit, minimal workflow permissions.
+- Avoids exposing credentials.
+- Does not automatically apply infrastructure.
+- Does not depend on a paid, always-on AWS learning cluster.
+
+If deployment automation is added or already exists, review it for safe permissions, environment protection, approvals, secret handling, and rollback behavior.
+
+Use GitHub Actions OIDC for AWS authentication if AWS deployment is in scope and can be configured safely. Do not require long-lived AWS access keys unnecessarily.
+
+## 9. Phase Six — Operational Readiness and Observability
+
+Ensure the project provides actionable diagnostic information for:
+
+- EC2 bootstrap failures
+- Application startup failures
+- systemd service crashes
+- Nginx upstream failures
+- ALB target health failures
+- Auto Scaling replacement behavior
+- Database connectivity failures, if applicable
+- Terraform backend and locking problems
+
+Review CloudWatch alarms, metrics, logs, SNS notifications, and health-check configuration.
+
+Document commands that can be used to diagnose failures without accessing secrets.
+
+If an operational fix is applied to an existing instance for emergency recovery, distinguish that temporary repair from the durable source-code fix.
+
+## 10. Phase Seven — Documentation and Consistency
+
+Update the documentation to match the repaired implementation.
+
+Where appropriate, include:
+
+- Architecture overview
+- Actual deployment prerequisites
+- Terraform initialization and validation
+- Safe plan/apply workflow
+- Application bootstrap and health-check behavior
+- CI workflow and test instructions
+- Operational troubleshooting
+- Rollback and recovery procedures
+- Cost considerations
+- Known limitations
+- Security controls
+- Evidence of tests that actually ran
+
+Do not claim production readiness, successful deployment, load-test results, disaster recovery, or security certification without evidence.
+
+Clearly distinguish:
+
+- Implemented and verified
+- Implemented but not tested in AWS
+- Requires AWS credentials or manual approval
+- Not implemented
+- Known limitations
+
+## 11. Execution Protocol
+
+Work through these stages in order:
+
+**Stage A — Baseline:** Inspect the repository, Git status, configuration, and existing validation results.
+
+**Stage B — Findings:** Produce a prioritized list of verified issues and their root causes.
+
+**Stage C — Repair:** Modify the actual source files, templates, Terraform configuration, tests, workflows, and documentation as needed.
+
+**Stage D — Verification:** Execute relevant tests and validation commands. Fix regressions caused by your own changes.
+
+**Stage E — Infrastructure review:** If appropriate, produce a Terraform plan and inspect it for replacements, deletions, downtime, data loss, security changes, and cost impact. Do not apply automatically.
+
+**Stage F — Final audit:** Review the final Git diff and verify that every changed file has a documented reason.
+
+If a step cannot be completed because of missing credentials, network access, tool availability, or user approval, continue with the remaining safe work and record the blocker precisely.
+
+Do not stop after generating a plan. Perform the authorized source-code changes and local verification.
+
+## 12. Mandatory Final Deliverables
+
+At completion, produce a detailed Markdown report saved in the repository, for example:
+
+`docs/audit-repair-report.md`
+
+Also provide a concise summary in your final response.
+
+### A. Executive Summary
+
+- Overall status
+- Most important root causes
+- Major fixes completed
+- Remaining critical or high-severity issues
+- Whether the project is verified locally, verified in AWS, or still awaiting AWS verification
+
+### B. Complete Modified Files Inventory
+
+Create a table with:
+
+| File path | Change type | Original problem | Exact modification | Reason | Verification |
+|---|---|---|---|---|---|
+
+Include every file created, modified, or deleted. Never omit workflow files, tests, templates, documentation, or configuration changes.
+
+For every modified file, explain the meaningful change rather than saying only "improved" or "fixed."
+
+### C. Findings and Resolution Matrix
+
+| Finding ID | Severity | Root cause | Files affected | Resolution | Status |
+|---|---|---|---|---|---|
+
+Include both resolved and unresolved findings.
+
+### D. Test Results
+
+For every command executed, record:
+
+- Command
+- Result: PASS, FAIL, BLOCKED, or NOT RUN
+- Relevant output or concise evidence
+- Environment and runtime version
+- Explanation of any failure or exception
+
+Never invent test results or mark unexecuted tests as passed.
+
+### E. Terraform and Infrastructure Impact
+
+Document:
+
+- Terraform environments validated
+- Plan results, if generated
+- Resources expected to change, be replaced, or be destroyed
+- Potential downtime and data-loss risks
+- Expected additional cost, if determinable
+- Any AWS-side verification still required
+
+If no plan was run, explain why.
+
+### F. Security Review
+
+Summarize:
+
+- IAM changes
+- Network and database isolation findings
+- Secrets handling
+- Logging and monitoring
+- Scanner results
+- Accepted risks and remaining issues
+
+Do not include secret values.
+
+### G. Remaining Work and Production Readiness
+
+Provide a prioritized checklist of what remains before a production deployment can reasonably be approved.
+
+Do not award a production-ready status solely because Terraform validates or local tests pass.
+
+### H. Git Summary
+
+Provide the actual results of:
+
+- `git status --short`
+- `git diff --stat`
+- `git diff --check`
+
+If commits were not created, state that explicitly. Do not commit or push without authorization.
+
+### I. Final Response
+
+Conclude with:
+
+1. What was broken.
+2. What was actually fixed.
+3. The complete list of modified and newly created files.
+4. Tests that passed and failed.
+5. Whether AWS was changed or only the repository was modified.
+6. Remaining blockers.
+7. The location of the full Markdown report.
+
+## 13. Definition of Done
+
+The task is complete only when:
+
+- All verified, in-scope defects have been addressed or documented as blocked.
+- The application is compatible with the selected runtime.
+- Automated tests exist and have been executed where possible.
+- Terraform formatting and validation have been executed for the applicable environments.
+- CI is configured or existing CI has been verified.
+- Security and operational risks are documented.
+- Documentation matches the actual implementation.
+- All changes are reviewed through the final Git diff.
+- The full report identifies exactly what changed and what was verified.
+
+Begin by inspecting the repository and current Git status. Then execute the work systematically. Be rigorous, conservative with infrastructure, transparent about limitations, and precise in your final report.

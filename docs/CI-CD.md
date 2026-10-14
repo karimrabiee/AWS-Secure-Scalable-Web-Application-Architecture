@@ -8,7 +8,7 @@ This repository uses a deliberately small separation between **CI validation** a
 
 The workflow checks:
 
-1. Python dependencies, `ruff check`, syntax compilation, and pytest.
+1. Python dependencies, `ruff check`, syntax compilation, and pytest on Python 3.9 and 3.12; Python 3.9 is included because it matches the supported Amazon Linux runtime.
 2. Terraform formatting for the complete `terraform/` tree.
 3. Backend-free `terraform init` and `terraform validate` for `bootstrap`, `environments/dev`, and `environments/prod`.
 4. A lightweight repository-hygiene scan for common credentials and private keys.
@@ -28,11 +28,13 @@ Before using it, an owner must:
 - Add `AWS_REGION`, `TF_STATE_BUCKET`, and `TF_STATE_KEY_PREFIX` as protected
   GitHub Environment variables. The state bucket must already exist and the
   key prefix must be unique to this repository.
+- For `prod`, add `TF_DB_INSTANCE_CLASS` because the Terraform variable is
+  deliberately required and has no default. `TF_ALARM_EMAIL` is optional.
 - Configure `dev` or `prod` GitHub Environments to match the workflow input; add required reviewers for `prod`.
 - Do not use a committed `backend.hcl`; the workflow passes the protected
   backend variables directly to Terraform.
 
-The workflow performs validation and a plan first. Apply is a separate job, protected by the selected GitHub Environment. This repository does not claim that the optional workflow has been exercised against a real AWS account.
+The workflow performs validation and a plan first. Apply is a separate job, protected by the selected GitHub Environment. OIDC uses the `sts.amazonaws.com` audience, AWS identity is printed for account verification, and a per-environment concurrency lock prevents overlapping Terraform runs. This repository does not claim that the optional workflow has been exercised against a real AWS account.
 
 ## Local checks
 

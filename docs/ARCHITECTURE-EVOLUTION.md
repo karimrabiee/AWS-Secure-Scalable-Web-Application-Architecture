@@ -18,10 +18,10 @@ The file is preserved under `architecture/initial-architecture-diagram.png`. It 
 
 The current diagram was added after the Terraform migration and documentation review. It is not intended to erase or replace the original work. Its purpose is to make the current implementation and its boundaries easier to review.
 
-The current reference view explicitly shows the EC2 IAM role with both:
+The current reference view shows the EC2 IAM role with:
 
 - `AmazonSSMManagedInstanceCore` for Session Manager.
-- `secretsmanager:GetSecretValue` scoped to the exact RDS master-secret ARN.
+- No application secret-read permission, because the sample app does not consume RDS credentials.
 
 It also shows the private SSE-KMS audit bucket, the CloudTrail and VPC Flow Logs paths, the observability chain, and the separation between public entry points and private application/database tiers.
 
@@ -31,7 +31,7 @@ It also shows the private SSE-KMS audit bucket, the CloudTrail and VPC Flow Logs
 |---|---|---|
 | Design ownership | Original architecture drawing created for the manual build | Original drawing retained unchanged and shown first in the README |
 | Implementation reference | High-level design and manually validated environment | Terraform modules and environment-specific configuration are the implementation reference |
-| IAM | SSM role was shown at a high level | SSM plus one exact-ARN Secrets Manager read permission is documented |
+| IAM | SSM role was shown at a high level | SSM-only instance administration is documented; unused secret access was removed |
 | Storage encryption | S3 and CloudTrail were shown without a precise algorithm label | Audit storage is described consistently as SSE-KMS |
 | Evidence | Manual screenshots and validation results | Manual evidence and Terraform evidence are separated explicitly |
 | Scaling | ASG was shown as part of the application tier | Dynamic scaling claims require an actual Terraform scaling policy and recorded test |

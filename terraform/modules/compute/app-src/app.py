@@ -1,6 +1,7 @@
 import logging
 import os
 from pathlib import Path
+from typing import Union
 
 from flask import Flask, render_template_string
 
@@ -12,7 +13,12 @@ AZ_PATH = Path("/var/lib/app/az.txt")
 INSTANCE_ID_PATH = Path("/var/lib/app/instance-id.txt")
 
 
-def read_text(path: str | Path, fallback: str = "unknown") -> str:
+def read_text(path: Union[str, Path], fallback: str = "unknown") -> str:
+    """Read optional instance metadata without failing the web process.
+
+    Union[] is intentionally used instead of the newer PEP 604 union syntax
+    because the supported Amazon Linux runtime may provide Python 3.9.
+    """
     try:
         return Path(path).read_text(encoding="utf-8").strip() or fallback
     except OSError as error:
@@ -44,7 +50,7 @@ def index():
 
 @app.get("/health")
 def health():
-    # Keep the ALB health check independent from the database.
+    # The endpoint is intentionally independent of the optional RDS tier.
     return "OK", 200, {"Content-Type": "text/plain; charset=utf-8"}
 
 
