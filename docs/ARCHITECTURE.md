@@ -22,7 +22,7 @@ Application Load Balancer  (public subnets, across AZ-A and AZ-B)
 Observability: VPC Flow Logs → CloudWatch Logs
                CloudWatch Alarms → SNS → Email
                CloudTrail → S3 (encrypted, blocked from public access)
-Access: SSM Session Manager only - no SSH, no open port 22. The EC2 role also has `secretsmanager:GetSecretValue` scoped to the exact RDS master-secret ARN.
+Access: SSM Session Manager only - no SSH, no open port 22. The sample app does not query RDS, so its EC2 role does not receive Secrets Manager permissions.
 ```
 
 ## Network
@@ -44,14 +44,14 @@ Security group chain: `ALB-SG ← 0.0.0.0/0` (80 always, 443 once a certificate 
 | Application Load Balancer | HTTP/HTTPS distribution across AZs, health check on `/health` |
 | EC2 + Auto Scaling Group | Application tier; CPU target tracking by default, plus instance refresh when the AMI or user data changes |
 | RDS MySQL | Managed database, encrypted, automated backups, Multi-AZ in prod |
-| IAM + SSM | Least-privilege EC2 role (SSM plus one exact-ARN secret read), no SSH |
+| IAM + SSM | EC2 role with `AmazonSSMManagedInstanceCore` only; no SSH and no unused database-secret access |
 | Secrets Manager | RDS master password, created and rotated by RDS itself, never a Terraform variable |
 | CloudWatch + SNS | 7 alarms (EC2 CPU, ALB unhealthy targets, ALB 5xx, ALB p95 latency, RDS CPU/storage/connections) plus email alerting |
 | CloudTrail | Management-event logging to a private S3 bucket using SSE-KMS and log-file validation |
 | VPC Flow Logs | Network traffic records sent to CloudWatch Logs |
 | S3 | Terraform state (separate bucket) and CloudTrail logs |
 
-No Route 53, no mandatory ACM, no CloudFront, no ECS/EKS, no CI/CD in this project — a deliberate choice, see `DECISIONS.md`.
+No Route 53, no mandatory ACM, no CloudFront, no ECS/EKS, and no automatic AWS deployment pipeline. A GitHub Actions CI workflow validates tests and Terraform without applying infrastructure; deployment automation remains deliberately out of scope, see `DECISIONS.md`.
 
 ## High availability
 

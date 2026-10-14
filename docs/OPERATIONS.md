@@ -75,7 +75,25 @@ terraform apply
 terraform output alb_dns_name
 ```
 
-## 5. Test the application
+## 5. Diagnose a 502 Bad Gateway
+
+A 502 from Nginx commonly means the local Gunicorn/Flask upstream is unavailable. Do not start by changing security groups or weakening the ALB health check. Use SSM Session Manager to inspect the instance without opening SSH:
+
+```bash
+sudo systemctl --no-pager --full status ecomm-app nginx
+sudo journalctl -u ecomm-app -n 100 --no-pager
+sudo tail -n 100 /var/log/ecomm-app-bootstrap.log
+sudo nginx -t
+curl -i --max-time 5 http://127.0.0.1:8000/health
+curl -i --max-time 5 http://127.0.0.1/health
+sudo ss -lntp
+```
+
+Expected results: Gunicorn is listening on `127.0.0.1:8000`; both local health checks return `HTTP 200`; Nginx syntax validation succeeds. If port 8000 is unavailable, read the first Python/Gunicorn exception in `journalctl` before changing configuration. The bootstrap log records package installation, import preflight, and final health-check failures without enabling shell tracing.
+
+The source delivery chain is `app-src/app.py` and `requirements.txt` → `filebase64()` in the compute module → Launch Template user data → Auto Scaling Group instance refresh. After changing application source, run local tests and `terraform plan`; confirm the plan changes the Launch Template and refreshes the ASG before applying it. Never manually patch only one instance as the permanent fix.
+
+## 6. Test the application
 
 ```bash
 ALB_DNS=$(terraform output -raw alb_dns_name)
@@ -85,7 +103,7 @@ curl -i "http://${ALB_DNS}/"
 
 `/health` is expected to return `200 OK`.
 
-## 6. Pre-deploy checks
+## 7. Pre-deploy checks
 
 ```bash
 python3 -m py_compile terraform/modules/compute/app-src/app.py
@@ -96,7 +114,7 @@ terraform fmt -check -recursive terraform
 
 This project is not considered actually deployed until `plan` and `apply` have run against a real AWS account and the endpoints above have been tested.
 
-## 7. Accessing EC2
+## 8. Accessing EC2
 
 No SSH, no key pair. Use SSM Session Manager:
 
@@ -107,7 +125,7 @@ sudo journalctl -u ecomm-app -n 100 --no-pager
 sudo journalctl -u nginx -n 100 --no-pager
 ```
 
-## 8. Load testing the Auto Scaling policy
+## 9. Load testing the Auto Scaling policy
 
 `load-testing/k6-script.js` ramps traffic up to 1,000 virtual users to exercise the ASG target-tracking policy based on average CPU and the `alb_response_time` / `alb_5xx` alarms under load. The policy targets 60% average CPU by default and can be disabled with `enable_cpu_scaling = false`.
 
@@ -117,7 +135,7 @@ k6 run -e TARGET_URL=http://<alb_dns_name> load-testing/k6-script.js
 
 Run this against `dev` first, and only against `prod` as a scheduled, signed-off exercise — a 1,000-VU run can itself trip the WAF rate-limit rule. This repository documents the procedure and the `p(95)<2000ms` threshold the script checks; it does not claim a specific past run's results. Record the actual numbers (whether the ASG scaled from 2 to more instances, and the p95 latency observed) wherever you keep deployment evidence for this environment.
 
-## 9. Testing RDS failover and backups
+## 10. Testing RDS failover and backups
 
 These are the commands to exercise Multi-AZ failover and point-in-time recovery against the Terraform-managed database. Results are not included here — this section describes how to run the test, not a claim that it has been run against this specific deployment. (The root `README.md` documents an executed Multi-AZ failover test against the original, manually built environment, with evidence in `validation-tests/`.)
 
@@ -135,11 +153,11 @@ aws rds restore-db-instance-to-point-in-time \
 
 Delete the restored `-pitr-test` instance once you've confirmed it, since it is a full second RDS instance and bills accordingly. Neither RTO nor RPO has been formally measured for this project; both commands above are how you would measure them.
 
-## 10. Pre-deploy checks, recap
+## 11. Pre-deploy checks, recap
 
 See section 6 above; run it before every `apply`.
 
-## 11. Common issues (quick reference)
+## 12. Common issues (quick reference)
 
 Full write-ups with cause, fix, and prevention are in [`docs/TROUBLESHOOTING.md`](TROUBLESHOOTING.md).
 
@@ -151,7 +169,7 @@ Full write-ups with cause, fix, and prevention are in [`docs/TROUBLESHOOTING.md`
 | Terraform asks for `db_instance_class` | Set it in a local tfvars file (a deliberate choice, no default) — never commit a placeholder. |
 | `Error acquiring the state lock` | See `docs/TROUBLESHOOTING.md` — usually an interrupted run or a second run in parallel. |
 
-## 12. Create / Import / Update / Destroy
+## 13. Create / Import / Update / Destroy
 
 The original environment was built manually. When running Terraform against an account that already has real resources under the same names, the distinction matters:
 
@@ -162,7 +180,7 @@ The original environment was built manually. When running Terraform against an a
 
 Terraform does not "discover" existing AWS resources automatically. If a resource (RDS or the ALB, for example) already exists from the original manual deploy and should be kept, run `terraform import` once before the first `apply` so Terraform doesn't try to create a duplicate. Import commands are not part of the normal deployment flow above — they apply only when this specific situation comes up.
 
-## 13. Cleaning up
+## 14. Cleaning up
 
 Never run `destroy` against prod casually. RDS and the state bucket both have deletion protection. For dev:
 

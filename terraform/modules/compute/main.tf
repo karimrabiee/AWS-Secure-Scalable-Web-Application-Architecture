@@ -45,21 +45,6 @@ resource "aws_iam_instance_profile" "ec2_ssm" {
   role = aws_iam_role.ec2_ssm.name
 }
 
-# this policy grants the EC2 instance permission to read the database secret from Secrets Manager,
-#  so it can connect to the RDS instance.
-data "aws_iam_policy_document" "read_db_secret" {
-  statement {
-    actions   = ["secretsmanager:GetSecretValue"]
-    resources = [var.db_secret_arn]
-  }
-}
-
-resource "aws_iam_role_policy" "read_db_secret" {
-  name   = "${var.name_prefix}-read-db-secret"
-  role   = aws_iam_role.ec2_ssm.id
-  policy = data.aws_iam_policy_document.read_db_secret.json
-}
-
 resource "aws_launch_template" "app" {
   name          = var.launch_template_name
   image_id      = local.resolved_ami_id
@@ -84,10 +69,6 @@ resource "aws_launch_template" "app" {
   user_data = base64encode(templatefile("${path.module}/user-data.sh.tftpl", {
     app_py_b64       = filebase64("${path.module}/app-src/app.py")
     requirements_b64 = filebase64("${path.module}/app-src/requirements.txt")
-    db_secret_arn    = var.db_secret_arn
-    db_address       = var.db_address
-    db_port          = var.db_port
-    db_name          = var.db_name
   }))
 
   tag_specifications {

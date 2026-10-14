@@ -1,20 +1,23 @@
-import json
+from __future__ import annotations
+
 import logging
 import os
-from datetime import date, datetime
-from decimal import Decimal
 from pathlib import Path
+from typing import Union
 
 from flask import Flask, render_template_string
 
 app = Flask(__name__)
 logging.basicConfig(level=os.getenv("LOG_LEVEL", "INFO"))
+logger = logging.getLogger(__name__)
 
 
-def read_text(path: str, fallback: str = "unknown") -> str:
+def read_text(path: Union[str, Path], fallback: str = "unknown") -> str:
+    """Read optional instance metadata; missing/unreadable files are non-fatal."""
     try:
-        return Path(path).read_text().strip() or fallback
-    except OSError:
+        return Path(path).read_text(encoding="utf-8").strip() or fallback
+    except OSError as error:
+        logger.warning("Unable to read application metadata file %s: %s", path, error)
         return fallback
 
 

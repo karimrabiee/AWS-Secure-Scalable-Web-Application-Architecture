@@ -30,14 +30,14 @@ The project deliberately preserves the initial architecture diagram created duri
 
 ![Current Terraform-aligned Architecture](architecture/architecture-diagram.png)
 
-*Current reference view. It reflects the documented Terraform design, including the scoped EC2 secret-read permission, SSE-KMS audit storage, observability paths, and the distinction between production-inspired design intent and deployed evidence.*
+*Current reference view. It reflects the Terraform design, including SSM-only instance management, private application/database tiers, SSE-KMS audit storage, observability paths, and the distinction between production-inspired design intent and deployed evidence.*
 
 ### What changed between the two views?
 
 | Area | Initial design | Current documented/Terraform-aligned view |
 |---|---|---|
 | Provenance | Design created for the manual AWS build | Initial artifact preserved; Terraform-aligned view added for implementation clarity |
-| EC2 IAM role | `AmazonSSMManagedInstanceCore` was shown | SSM plus `secretsmanager:GetSecretValue` scoped to the exact RDS secret ARN |
+| EC2 IAM role | `AmazonSSMManagedInstanceCore` was shown | `AmazonSSMManagedInstanceCore` only; unused RDS master-secret access is not granted to the sample app |
 | Audit storage | S3 and CloudTrail were shown | S3 audit storage is documented as private and SSE-KMS encrypted |
 | Evidence | Manual build and validation screenshots | Manual evidence is explicitly separated from Terraform validation evidence |
 | Scaling claim | Auto Scaling Group was shown | Dynamic CPU scaling must be backed by an actual Terraform policy and a recorded load test |
@@ -109,7 +109,7 @@ Internet → ALB-SG (80, and 443 once a certificate exists, from 0.0.0.0/0)
         → RDS-SG (port 3306, from EC2-SG only)
 ```
 
-Only the ALB accepts public traffic; every rule past it references a security group, never a raw CIDR. The EC2 role combines `AmazonSSMManagedInstanceCore` with one inline `secretsmanager:GetSecretValue` permission scoped to the exact RDS master-secret ARN.
+Only the ALB accepts public traffic; every rule past it references a security group, never a raw CIDR. The Terraform-managed EC2 role uses `AmazonSSMManagedInstanceCore` for Session Manager and does not receive RDS master credentials because the current sample app does not query the database.
 
 | Control | Status |
 |---|---|
@@ -184,6 +184,10 @@ PowerShell: replace `cp` with `Copy-Item`. No domain or ACM certificate is requi
 
 Full workflow, deletion-protection notes, and troubleshooting: [`terraform/README.md`](terraform/README.md)
 
+### Automated Validation
+
+The GitHub Actions workflow in [`.github/workflows/ci.yml`](.github/workflows/ci.yml) runs the Flask tests on Python 3.9 and 3.12, validates Terraform bootstrap/dev/prod configurations without configuring the remote backend, and runs an advisory Checkov scan. It does not authenticate to AWS or apply infrastructure. To run application tests locally, install `requirements-dev.txt` and run `python -m pytest -q`.
+
 ## Evidence Boundary
 
 The repository contains two different kinds of evidence and they must not be read as interchangeable:
@@ -249,7 +253,7 @@ Main drivers: RDS, NAT Gateways, ALB, WAF, CloudWatch. `dev` defaults to the che
 
 ## Future Improvements
 
-HTTPS + Route 53 + ACM · GitHub Actions CI/CD · load testing at higher concurrency · ECS/Fargate migration for the application tier.
+HTTPS + Route 53 + ACM · GitHub Actions AWS deployment automation (CI validation exists; no automatic apply) · load testing at higher concurrency · ECS/Fargate migration for the application tier.
 
 ## Cleanup
 

@@ -1,0 +1,123 @@
+name: Terraform deploy (manual)
+
+on:
+  workflow_dispatch:
+    inputs:
+      environment:
+        description: Terraform environment to plan/apply
+        required: true
+        type: choice
+        options: [dev, prod]
+      apply:
+        description: Apply the reviewed plan (requires environment approval)
+        required: true
+        type: boolean
+        default: false
+
+permissions:
+  contents: read
+  id-token: write
+
+concurrency:
+  group: terraform-${{ inputs.environment }}
+  cancel-in-progress: false
+
+jobs:
+  plan:
+    name: Plan ${{ inputs.environment }}
+    runs-on: ubuntu-22.04
+    environment: ${{ inputs.environment }}
+    env:
+      TF_IN_AUTOMATION: 'true'
+      TF_INPUT: 'false'
+      DEPLOY_DB_INSTANCE_CLASS: ${{ vars.TF_DB_INSTANCE_CLASS }}
+      DEPLOY_ALARM_EMAIL: ${{ vars.TF_ALARM_EMAIL }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: hashicorp/setup-terraform@v3
+        with:
+          terraform_version: '1.10.5'
+
+      - name: Configure AWS credentials with OIDC
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ vars.AWS_DEPLOY_ROLE_ARN }}
+          aws-region: ${{ vars.AWS_REGION || 'us-east-1' }}
+          audience: sts.amazonaws.com
+
+      - name: Verify AWS identity
+        run: aws sts get-caller-identity
+
+      - name: Terraform init
+        working-directory: terraform/environments/${{ inputs.environment }}
+        run: terraform init -input=false -backend-config="bucket=${{ vars.TF_STATE_BUCKET }}" -backend-config="key=${{ vars.TF_STATE_KEY_PREFIX }}/${{ inputs.environment }}.tfstate" -backend-config="region=${{ vars.AWS_REGION || 'us-east-1' }}"
+
+      - name: Terraform validate
+        working-directory: terraform/environments/${{ inputs.environment }}
+        run: terraform validate -no-color
+
+      - name: Terraform plan
+        working-directory: terraform/environments/${{ inputs.environment }}
+        run: |
+          if [ "${{ inputs.environment }}" = "prod" ]; then
+            test -n "$DEPLOY_DB_INSTANCE_CLASS" || {
+              echo "TF_DB_INSTANCE_CLASS is required for prod" >&2
+              exit 1
+            }
+            export TF_VAR_db_instance_class="$DEPLOY_DB_INSTANCE_CLASS"
+          fi
+          if [ -n "$DEPLOY_ALARM_EMAIL" ]; then
+            export TF_VAR_alarm_email="$DEPLOY_ALARM_EMAIL"
+          fi
+          terraform plan -input=false -out=tfplan
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: terraform-plan-${{ inputs.environment }}
+          path: terraform/environments/${{ inputs.environment }}/tfplan
+          retention-days: 5
+
+  apply:
+    name: Apply ${{ inputs.environment }}
+    if: ${{ inputs.apply == true }}
+    needs: plan
+    runs-on: ubuntu-22.04
+    environment: ${{ inputs.environment }}
+    permissions:
+      contents: read
+      id-token: write
+    env:
+      TF_IN_AUTOMATION: 'true'
+      TF_INPUT: 'false'
+      DEPLOY_DB_INSTANCE_CLASS: ${{ vars.TF_DB_INSTANCE_CLASS }}
+      DEPLOY_ALARM_EMAIL: ${{ vars.TF_ALARM_EMAIL }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: hashicorp/setup-terraform@v3
+        with:
+          terraform_version: '1.10.5'
+
+      - name: Configure AWS credentials with OIDC
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ vars.AWS_DEPLOY_ROLE_ARN }}
+          aws-region: ${{ vars.AWS_REGION || 'us-east-1' }}
+          audience: sts.amazonaws.com
+
+      - name: Verify AWS identity
+        run: aws sts get-caller-identity
+
+      - uses: actions/download-artifact@v4
+        with:
+          name: terraform-plan-${{ inputs.environment }}
+          path: terraform/environments/${{ inputs.environment }}
+
+      - name: Terraform init
+        working-directory: terraform/environments/${{ inputs.environment }}
+        run: terraform init -input=false -backend-config="bucket=${{ vars.TF_STATE_BUCKET }}" -backend-config="key=${{ vars.TF_STATE_KEY_PREFIX }}/${{ inputs.environment }}.tfstate" -backend-config="region=${{ vars.AWS_REGION || 'us-east-1' }}"
+
+      - name: Apply reviewed plan
+        working-directory: terraform/environments/${{ inputs.environment }}
+        run: terraform apply -input=false tfplan

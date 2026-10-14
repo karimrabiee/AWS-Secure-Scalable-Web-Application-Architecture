@@ -25,10 +25,9 @@ flowchart LR
     DBB -.-> RDS
   end
 
-  AppA -.-> Role[EC2 IAM role<br/>SSM ManagedInstanceCore<br/>+ GetSecretValue on exact RDS secret ARN]
+  AppA -.-> Role[EC2 IAM role<br/>SSM ManagedInstanceCore only]
   AppB -.-> Role
   Role --> SSM[AWS Systems Manager<br/>Session Manager / no SSH]
-  Role --> Secrets[AWS Secrets Manager<br/>RDS master secret]
 
   ALB --> WAFLogs[WAF logs]
   AppA --> Flow[VPC Flow Logs]
@@ -43,5 +42,5 @@ flowchart LR
   classDef data fill:#f5f3ff,stroke:#7c3aed,color:#111827
   class WAF,ALB edge
   class AppA,AppB,DBA,DBB,NATA,NATB,PubA,PubB private
-  class Role,SSM,Secrets,WAFLogs,Flow,CW,SNS,CloudTrail security
+  class Role,SSM,WAFLogs,Flow,CW,SNS,CloudTrail security
   class RDS,Audit data

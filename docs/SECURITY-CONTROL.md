@@ -60,7 +60,7 @@ There is no SSH inbound rule anywhere in this architecture. EC2 instances are ac
 - Logs all session activity to CloudTrail
 - Works from the AWS Console or the AWS CLI (`aws ssm start-session`)
 
-The EC2 IAM role has the AWS-managed `AmazonSSMManagedInstanceCore` policy for Session Manager and one additional inline policy. The inline policy grants only `secretsmanager:GetSecretValue` on the exact RDS master-secret ARN supplied to the compute module. It does not grant wildcard access to Secrets Manager.
+The Terraform-managed EC2 IAM role uses the AWS-managed `AmazonSSMManagedInstanceCore` policy for Session Manager. The current sample app does not query RDS, so its instance role does not receive Secrets Manager access and no unused database master credential is copied to the host. If a database-backed feature is added, use a dedicated least-privilege database user and scope secret access to the exact secret ARN.
 
 ### IMDSv2 enforcement
 
@@ -137,7 +137,7 @@ The CPU alarm at 70% for 5 minutes serves both an operational and a light securi
 
 | Principal | Permissions | Reason |
 |---|---|---|
-| EC2 instance role | `AmazonSSMManagedInstanceCore` plus `secretsmanager:GetSecretValue` on one exact ARN | Session Manager plus runtime retrieval of the RDS master secret |
+| EC2 instance role | `AmazonSSMManagedInstanceCore` | Session Manager; no unused RDS master credential is delivered to the sample app host |
 | CloudTrail | `s3:PutObject` to the audit bucket only | CloudTrail only needs to write logs |
 | VPC Flow Logs | `logs:CreateLogGroup`, `logs:CreateLogDelivery`, `logs:PutLogEvents` | Minimum to deliver flow logs |
 

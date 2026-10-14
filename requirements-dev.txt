@@ -1,0 +1,2 @@
+-r terraform/modules/compute/app-src/requirements.txt
+pytest==8.3.5

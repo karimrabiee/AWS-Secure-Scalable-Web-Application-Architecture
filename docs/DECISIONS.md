@@ -20,13 +20,15 @@ The sample application is a small Flask app in `terraform/modules/compute/app-sr
 
 ## 5. Secrets and SSM
 
-RDS generates and manages the master password in AWS Secrets Manager. At boot,
-the instance's user data fetches it through an IAM role scoped to
-secretsmanager:GetSecretValue on exactly one secret ARN — never a wildcard —
-and writes it to a local, root:app-owned, 640-permission file. This
-demonstrates the credential-delivery pattern; the current sample app does not
-call the database itself. No password exists in Git, Terraform variables, or
-user data source code.
+RDS generates and manages its master password in AWS Secrets Manager. The
+current sample Flask app only demonstrates the web/application tier and does
+not query RDS. Therefore, the EC2 instance role intentionally has
+`AmazonSSMManagedInstanceCore` only; it does not retrieve or store an unused
+RDS credential. This avoids placing a master credential on an application
+host that has no database feature. If database-backed application behavior is
+added later, introduce a dedicated least-privilege database user, grant access
+to only the required secret, and test connection handling before deployment.
+No password is stored in Git, Terraform variables, or user-data source code.
 
 ## 6. AMI auto-discovery, with an explicit-pin option
 
@@ -60,7 +62,7 @@ The original environment was built by hand through the Console. When Terraform i
 
 ## 11. Services kept out of scope
 
-No domain, Route 53, or ACM certificate is required today. No CloudFront, Kubernetes, ECS, CI/CD, or multi-region setup. These are not gaps — they are deliberate choices to keep cost and complexity down for what this project needs to demonstrate.
+No domain, Route 53, or ACM certificate is required today. No CloudFront, Kubernetes, ECS, automatic AWS deployment pipeline, or multi-region setup. A GitHub Actions CI workflow runs local tests, Terraform validation, and an advisory security scan; it does not apply infrastructure. These boundaries keep cost and complexity down for this portfolio project.
 
 ## 12. One NAT Gateway per AZ in production
 
@@ -70,6 +72,6 @@ A single NAT Gateway shared by both AZs would make instances in one AZ depend on
 
 The WAF rate-based rule blocks an IP after it crosses `waf_rate_limit_per_5min` requests, evaluated over a rolling five-minute window. This is a coarse defense against floods and scanners — it is not a precise per-second rate limiter, and it is not a substitute for a CDN or a dedicated bot-management service.
 
-## 14. IAM scope on the state bucket, and no CI/CD role yet
+## 14. IAM scope on the state bucket, and no AWS deployment role yet
 
-The bootstrap state bucket currently denies only insecure (non-HTTPS) access; it is not yet scoped to a specific operator role or CI/CD identity, because none exists in this project. CI/CD (Phase 4, see the root README's *Future Improvements*) is intentionally deferred — adding a pipeline before there is a real deployment cadence to automate would add moving parts without a matching benefit. When a CI/CD role is introduced, the bucket policy should be narrowed to that role plus the individual operators who need it.
+The bootstrap state bucket currently denies insecure (non-HTTPS) access; it is not yet scoped to a specific operator role or AWS deployment identity. The GitHub Actions workflow added for this repository performs tests and static validation only: it has no AWS credentials, OIDC trust, or permission to apply infrastructure. If AWS deployment automation is introduced later, create a dedicated OIDC role with least-privilege permissions and narrow the state-bucket policy to that role plus the individual operators who need it. Until then, state-bucket operator access remains a documented hardening item.
