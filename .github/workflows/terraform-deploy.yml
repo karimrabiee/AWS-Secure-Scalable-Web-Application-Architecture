@@ -31,10 +31,14 @@ jobs:
       - uses: hashicorp/setup-terraform@v3
         with:
           terraform_version: '1.10.5'
+          
       - uses: aws-actions/configure-aws-credentials@v4
         with:
           role-to-assume: ${{ vars.AWS_DEPLOY_ROLE_ARN }}
-          aws-region: ${{ vars.AWS_REGION || 'us-east-1' }}
+          aws-region: ${{ vars.AWS_REGION }}
+          audience: sts.amazonaws.com
+
+          
       - name: Verify AWS identity
         run: aws sts get-caller-identity
 
