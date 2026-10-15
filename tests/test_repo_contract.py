@@ -119,8 +119,9 @@ class BootstrapTemplateTests(unittest.TestCase):
 
     def test_manifest_matches_every_application_file(self):
         files = renderer.app_files()
-        for name, content in files.items():
-            self.assertIn("  " + name, renderer.manifest(files), name)
+        text = renderer.manifest(files)
+        for name in files:
+            self.assertIn("  " + name, text, name)
         self.assertIn("requirements.txt", files)
         self.assertEqual({p.name for p in APP_SRC.glob("*.py")}, {"app.py", "db.py"})
 

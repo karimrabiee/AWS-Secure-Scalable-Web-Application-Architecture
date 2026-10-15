@@ -120,7 +120,7 @@ class SchemaTests(unittest.TestCase):
     def test_seed_data_is_unique_and_valid(self):
         skus = [row[0] for row in db.SEED_PRODUCTS]
         self.assertEqual(len(skus), len(set(skus)))
-        for sku, name, category, description, price, stock, icon in db.SEED_PRODUCTS:
+        for sku, name, category, description, price, stock, _icon in db.SEED_PRODUCTS:
             self.assertLessEqual(len(sku), 32)
             self.assertLessEqual(len(name), 120)
             self.assertLessEqual(len(category), 40)
