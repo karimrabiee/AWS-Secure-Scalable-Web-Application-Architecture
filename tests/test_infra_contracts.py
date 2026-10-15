@@ -263,9 +263,10 @@ def test_deploy_workflow_is_gated_and_serialised():
     assert "terraform apply -input=false -lock-timeout=300s tfplan" in (ROOT / ".github/workflows/terraform-deploy.yml").read_text()
 
 
-def test_ci_workflow_is_read_only_and_covers_python_39():
+def test_ci_workflow_is_read_only_and_covers_supported_python_versions():
     wf = workflow("ci.yml")
     assert wf["permissions"] == {"contents": "read"}
-    assert "3.11" in wf["jobs"]["application"]["strategy"]["matrix"]["python-version"]
+    versions = wf["jobs"]["application"]["strategy"]["matrix"]["python-version"]
+    assert "3.11" in versions and "3.12" in versions
     raw = (ROOT / ".github/workflows/ci.yml").read_text(encoding="utf-8")
     assert "id-token" not in raw and "aws-actions" not in raw  # CI never touches AWS

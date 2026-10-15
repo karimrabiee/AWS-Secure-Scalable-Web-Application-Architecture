@@ -83,6 +83,34 @@ jobs:
       - name: Require backend configuration
         run: |
           test -n "$TF_STATE_BUCKET" || { echo "::error::Repository/Environment variable TF_STATE_BUCKET is not set"; exit 1; }
+          test -n "${{ vars.AWS_DEPLOY_ROLE_ARN }}" || { echo "::error::Environment variable AWS_DEPLOY_ROLE_ARN is not set"; exit 1; }
+
+      - name: Diagnose existing state object access
+        working-directory: ${{ env.TF_DIR }}
+        shell: bash
+        run: |
+          # A missing object is allowed only for the explicit first-deployment flow.
+          # AccessDenied/403 is not treated as an empty state: it must be fixed in IAM/S3.
+          set +e
+          OUTPUT=$(aws s3api head-object \
+            --bucket "$TF_STATE_BUCKET" \
+            --key "$STATE_KEY" \
+            --region "$AWS_REGION_NAME" 2>&1)
+          STATUS=$?
+          set -e
+          if [ "$STATUS" -eq 0 ]; then
+            echo "State object is readable: s3://$TF_STATE_BUCKET/$STATE_KEY"
+          elif echo "$OUTPUT" | grep -Eqi 'AccessDenied|Forbidden|403'; then
+            echo "::error::AWS identity cannot read s3://$TF_STATE_BUCKET/$STATE_KEY. Check s3:GetObject on the exact state object, bucket policy, permissions boundary, and KMS key policy if customer-managed encryption is used. See docs/iam/README.md."
+            echo "$OUTPUT"
+            exit 1
+          elif echo "$OUTPUT" | grep -Eqi 'NotFound|404|NoSuchKey'; then
+            echo "State object does not exist yet; the explicit empty-state guard below will decide whether this is allowed."
+          else
+            echo "::error::Could not verify Terraform state access. Review the AWS CLI output below."
+            echo "$OUTPUT"
+            exit 1
+          fi
 
       - name: Terraform init
         working-directory: ${{ env.TF_DIR }}
