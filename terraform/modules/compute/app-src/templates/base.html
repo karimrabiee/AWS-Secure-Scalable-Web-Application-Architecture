@@ -1,0 +1,49 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="color-scheme" content="light dark">
+  <meta name="description" content="Nimbus Store - premium desk gear, served from a highly available AWS architecture.">
+  <title>{% block title %}Nimbus Store{% endblock %}</title>
+  <link rel="icon" href="{{ url_for('static', filename='favicon.svg') }}" type="image/svg+xml">
+  <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
+</head>
+<body>
+  <svg class="sprite" aria-hidden="true" focusable="false" xmlns="http://www.w3.org/2000/svg">
+    <symbol id="i-audio" viewBox="0 0 24 24"><path d="M4 14v-2a8 8 0 0 1 16 0v2"/><rect x="3" y="14" width="4" height="6" rx="1.5"/><rect x="17" y="14" width="4" height="6" rx="1.5"/></symbol>
+    <symbol id="i-keyboard" viewBox="0 0 24 24"><rect x="2" y="6" width="20" height="12" rx="2"/><path d="M6 10h.01M10 10h.01M14 10h.01M18 10h.01M7 14h10"/></symbol>
+    <symbol id="i-display" viewBox="0 0 24 24"><rect x="3" y="4" width="18" height="12" rx="2"/><path d="M8 20h8M12 16v4"/></symbol>
+    <symbol id="i-mouse" viewBox="0 0 24 24"><rect x="6" y="3" width="12" height="18" rx="6"/><path d="M12 7v4"/></symbol>
+    <symbol id="i-camera" viewBox="0 0 24 24"><circle cx="12" cy="10" r="6"/><circle cx="12" cy="10" r="2"/><path d="M8 21h8M12 16v5"/></symbol>
+    <symbol id="i-storage" viewBox="0 0 24 24"><rect x="3" y="5" width="18" height="6" rx="1.5"/><rect x="3" y="13" width="18" height="6" rx="1.5"/><path d="M7 8h.01M7 16h.01"/></symbol>
+    <symbol id="i-power" viewBox="0 0 24 24"><rect x="7" y="3" width="10" height="18" rx="2"/><path d="M12 8l-2 4h4l-2 4"/></symbol>
+    <symbol id="i-hub" viewBox="0 0 24 24"><rect x="3" y="9" width="18" height="8" rx="2"/><path d="M7 13h2M12 13h2M17 13h.01M7 9V6M12 9V5"/></symbol>
+  </svg>
+
+  <a class="skip-link" href="#main">Skip to content</a>
+  <header class="site-header">
+    <div class="container header-inner">
+      <a class="brand" href="{{ url_for('index') }}" aria-label="Nimbus Store home">
+        <span class="brand-mark" aria-hidden="true"></span>Nimbus<span class="brand-light">Store</span>
+      </a>
+      <nav class="nav" aria-label="Primary">
+        <a href="{{ url_for('index') }}"{% if request.endpoint in ('index', 'product_detail') %} aria-current="page"{% endif %}>Shop</a>
+        <a href="{{ url_for('status_page') }}"{% if request.endpoint == 'status_page' %} aria-current="page"{% endif %}>Platform status</a>
+      </nav>
+    </div>
+  </header>
+
+  <main id="main" class="container">
+    {% block content %}{% endblock %}
+  </main>
+
+  <footer class="site-footer">
+    <div class="container footer-inner">
+      <span>&copy; Nimbus Store &middot; Reference architecture demo</span>
+      <span class="footer-meta">Served from <strong>{{ meta.az }}</strong> &middot; <code>{{ meta.instance_id }}</code></span>
+    </div>
+  </footer>
+  <script src="{{ url_for('static', filename='app.js') }}" defer></script>
+</body>
+</html>

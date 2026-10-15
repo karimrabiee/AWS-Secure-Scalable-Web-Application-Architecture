@@ -60,11 +60,7 @@ There is no SSH inbound rule anywhere in this architecture. EC2 instances are ac
 - Logs all session activity to CloudTrail
 - Works from the AWS Console or the AWS CLI (`aws ssm start-session`)
 
-<<<<<<< HEAD
-The Terraform-managed EC2 IAM role uses the AWS-managed `AmazonSSMManagedInstanceCore` policy for Session Manager. The current sample app does not query RDS, so its instance role does not receive Secrets Manager access and no unused database master credential is copied to the host. If a database-backed feature is added, use a dedicated least-privilege database user and scope secret access to the exact secret ARN.
-=======
-The EC2 IAM role has the AWS-managed `AmazonSSMManagedInstanceCore` policy for Session Manager and no application secret-read permission. The current sample app does not consume RDS credentials; adding database-backed behavior later requires a separately reviewed, exact-ARN Secrets Manager policy.
->>>>>>> 71250862fd348fd167e0e034b6f505b43e8e9250
+The Terraform-managed EC2 IAM role has `AmazonSSMManagedInstanceCore` for Session Manager plus one inline policy that allows `secretsmanager:GetSecretValue` on the single RDS-managed secret and read-only access to the application release bucket. The password is fetched at runtime and never written to disk; there is no SSH, no key pair and no public IP.
 
 ### IMDSv2 enforcement
 
@@ -141,11 +137,7 @@ The CPU alarm at 70% for 5 minutes serves both an operational and a light securi
 
 | Principal | Permissions | Reason |
 |---|---|---|
-<<<<<<< HEAD
-| EC2 instance role | `AmazonSSMManagedInstanceCore` | Session Manager; no unused RDS master credential is delivered to the sample app host |
-=======
-| EC2 instance role | `AmazonSSMManagedInstanceCore` only | Session Manager administration; the sample app has no database credential consumer |
->>>>>>> 71250862fd348fd167e0e034b6f505b43e8e9250
+| EC2 instance role | `AmazonSSMManagedInstanceCore` + inline secret/release read | Session Manager administration; `GetSecretValue` scoped to one secret ARN; read-only release bucket access |
 | CloudTrail | `s3:PutObject` to the audit bucket only | CloudTrail only needs to write logs |
 | VPC Flow Logs | `logs:CreateLogGroup`, `logs:CreateLogDelivery`, `logs:PutLogEvents` | Minimum to deliver flow logs |
 

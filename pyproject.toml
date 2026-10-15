@@ -1,13 +1,12 @@
 [tool.pytest.ini_options]
 testpaths = ["tests"]
 python_files = ["test_*.py"]
+pythonpath = ["terraform/modules/compute/app-src", "tests", "scripts"]
 
 [tool.ruff]
-line-length = 100
+line-length = 120
 target-version = "py39"
+src = ["terraform/modules/compute/app-src", "tests", "scripts"]
 
 [tool.ruff.lint]
 select = ["E", "F", "I", "B"]
-
-[tool.ruff.lint.per-file-ignores]
-"tests/*" = ["E402"]

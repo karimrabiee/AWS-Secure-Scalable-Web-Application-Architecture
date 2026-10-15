@@ -1,0 +1,10 @@
+{% extends "base.html" %}
+{% block title %}{{ title }} - Nimbus Store{% endblock %}
+{% block content %}
+<section class="notice notice-center">
+  <p class="eyebrow">Error {{ code }}</p>
+  <h1>{{ title }}</h1>
+  <p class="lead">{{ message }}</p>
+  <a class="btn" href="{{ url_for('index') }}">Back to the store</a>
+</section>
+{% endblock %}

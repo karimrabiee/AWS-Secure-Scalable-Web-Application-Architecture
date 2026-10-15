@@ -72,7 +72,7 @@ Full step-by-step deployment, AMI handling, testing the app, RDS failover/PITR p
 ## Validation
 
 ```bash
-python3 -m py_compile modules/compute/app-src/app.py
+python3 -m py_compile modules/compute/app-src/app.py modules/compute/app-src/db.py
 terraform fmt -check -recursive .
 (cd environments/dev  && terraform init -backend=false && terraform validate)
 (cd environments/prod && terraform init -backend=false && terraform validate)

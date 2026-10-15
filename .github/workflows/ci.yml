@@ -1,94 +1,22 @@
 name: CI
 
 on:
-<<<<<<< HEAD
-  push:
-  pull_request:
-  workflow_dispatch:
-=======
   pull_request:
   push:
     branches: [main]
->>>>>>> 71250862fd348fd167e0e034b6f505b43e8e9250
 
 permissions:
   contents: read
 
-<<<<<<< HEAD
-jobs:
-  application-tests:
-    name: Application tests (Python ${{ matrix.python-version }})
-    runs-on: ubuntu-latest
-    strategy:
-      fail-fast: false
-      matrix:
-        python-version: ["3.9", "3.12"]
-    steps:
-      - name: Check out repository
-        uses: actions/checkout@v4
-      - name: Set up Python
-        uses: actions/setup-python@v5
-        with:
-          python-version: ${{ matrix.python-version }}
-          cache: pip
-          cache-dependency-path: requirements-dev.txt
-      - name: Install pinned dependencies
-        run: python -m pip install --requirement requirements-dev.txt
-      - name: Run application and source-contract tests
-        run: python -m pytest -q
-
-  terraform-validation:
-    name: Terraform validation (${{ matrix.directory }})
-    runs-on: ubuntu-latest
-    strategy:
-      fail-fast: false
-      matrix:
-        directory:
-          - terraform/bootstrap
-          - terraform/environments/dev
-          - terraform/environments/prod
-    steps:
-      - name: Check out repository
-        uses: actions/checkout@v4
-      - name: Set up Terraform
-        uses: hashicorp/setup-terraform@v3
-        with:
-          terraform_version: 1.10.5
-          terraform_wrapper: false
-      - name: Check Terraform formatting
-        run: terraform fmt -check -recursive
-      - name: Initialize without configuring remote state
-        working-directory: ${{ matrix.directory }}
-        run: terraform init -backend=false -input=false -lockfile=readonly
-      - name: Validate configuration
-        working-directory: ${{ matrix.directory }}
-        run: terraform validate -no-color
-
-  terraform-security-scan:
-    name: Terraform security scan (advisory)
-    runs-on: ubuntu-latest
-    steps:
-      - name: Check out repository
-        uses: actions/checkout@v4
-      - name: Set up Python
-        uses: actions/setup-python@v5
-        with:
-          python-version: "3.12"
-      - name: Install pinned Checkov
-        run: python -m pip install checkov==3.2.432
-      - name: Scan Terraform configuration
-        # Keep the initial scan advisory until existing findings are triaged;
-        # the report must not silently equate scanner output with a confirmed vulnerability.
-        run: checkov --directory terraform --framework terraform --soft-fail
-=======
 concurrency:
   group: ci-${{ github.workflow }}-${{ github.ref }}
   cancel-in-progress: true
 
 jobs:
   python:
-    name: Python tests and quality
+    name: Python ${{ matrix.python-version }} (lint, tests, audit)
     runs-on: ubuntu-22.04
+    timeout-minutes: 15
     strategy:
       fail-fast: false
       matrix:
@@ -103,19 +31,51 @@ jobs:
             terraform/modules/compute/app-src/requirements.txt
             requirements-dev.txt
       - name: Install dependencies
-        run: python -m pip install -r terraform/modules/compute/app-src/requirements.txt -r requirements-dev.txt
+        run: python -m pip install -r requirements-dev.txt
       - name: Compile application
-        run: python -m py_compile terraform/modules/compute/app-src/app.py
+        run: python -m py_compile terraform/modules/compute/app-src/app.py terraform/modules/compute/app-src/db.py
       - name: Ruff
         run: ruff check .
-      - name: Tests
-        run: pytest -q
+      - name: Tests with coverage
+        run: pytest -q --cov=terraform/modules/compute/app-src --cov-report=term-missing
       - name: Dependency audit
         run: pip-audit -r terraform/modules/compute/app-src/requirements.txt
 
-  terraform:
-    name: Terraform validation
+  mysql-integration:
+    name: MySQL 8.4 integration
     runs-on: ubuntu-22.04
+    timeout-minutes: 15
+    services:
+      mysql:
+        image: mysql:8.4
+        env:
+          MYSQL_ROOT_PASSWORD: ci-only-password
+          MYSQL_DATABASE: appdb
+        ports: ['3306:3306']
+        options: >-
+          --health-cmd "mysqladmin ping -h 127.0.0.1 -pci-only-password"
+          --health-interval 5s --health-timeout 5s --health-retries 20
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.9'
+          cache: pip
+          cache-dependency-path: requirements-dev.txt
+      - name: Install dependencies
+        # cryptography is needed only because this throw-away server is reached without TLS;
+        # production connections use verified TLS and do not need it.
+        run: python -m pip install -r requirements-dev.txt cryptography==44.0.0
+      - name: Run integration tests against real MySQL
+        env:
+          TEST_MYSQL_HOST: 127.0.0.1
+          TEST_MYSQL_PASSWORD: ci-only-password
+        run: pytest -q tests/test_integration_mysql.py -rs
+
+  terraform:
+    name: Terraform (${{ matrix.root }})
+    runs-on: ubuntu-22.04
+    timeout-minutes: 15
     strategy:
       fail-fast: false
       matrix:
@@ -125,7 +85,8 @@ jobs:
       - uses: hashicorp/setup-terraform@v3
         with:
           terraform_version: '1.10.5'
-      - name: Formatting
+          terraform_wrapper: false
+      - name: Format check
         run: terraform fmt -check -recursive terraform
       - name: Init without backend
         working-directory: ${{ matrix.root }}
@@ -137,11 +98,13 @@ jobs:
   hygiene:
     name: Repository hygiene
     runs-on: ubuntu-22.04
+    timeout-minutes: 5
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
         with:
           python-version: '3.12'
-      - name: Check for common committed secrets and artifacts
+      - name: Scan for secrets, state files and conflict markers
         run: python scripts/check-repository-hygiene.py
->>>>>>> 71250862fd348fd167e0e034b6f505b43e8e9250
+      - name: Shell syntax
+        run: bash -n scripts/preflight.sh && bash -n scripts/smoke-test.sh

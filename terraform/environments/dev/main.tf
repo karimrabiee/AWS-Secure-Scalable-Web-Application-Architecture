@@ -82,6 +82,10 @@ module "compute" {
   asg_max_size          = var.asg_max_size
   enable_cpu_scaling    = var.enable_cpu_scaling
   cpu_target_percentage = var.cpu_target_percentage
+  db_host               = module.database.db_address
+  db_port               = module.database.db_port
+  db_name               = var.db_name
+  db_secret_arn         = module.database.master_user_secret_arn
   tags                  = local.tags
 }
 

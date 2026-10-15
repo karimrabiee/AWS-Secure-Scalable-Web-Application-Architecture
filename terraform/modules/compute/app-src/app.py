@@ -1,35 +1,44 @@
-<<<<<<< HEAD
+"""Nimbus Store - sample storefront for the AWS three-tier reference architecture.
+
+Request path: ALB -> Nginx -> Gunicorn -> Flask -> Amazon RDS for MySQL.
+
+Design notes:
+* ``/health`` is deliberately independent of the database so a database incident cannot
+  make the ALB drain every instance at once; ``/ready`` reports the database state.
+* The storefront degrades to a clear 503 page when the database is unreachable.
+"""
 from __future__ import annotations
 
-=======
->>>>>>> 71250862fd348fd167e0e034b6f505b43e8e9250
 import logging
 import os
+import platform
+from datetime import timedelta
 from pathlib import Path
-from typing import Union
+from typing import Any, Dict, Union
 
-from flask import Flask, render_template_string
+from flask import Flask, jsonify, render_template, request
 
-app = Flask(__name__)
-logger = logging.getLogger(__name__)
+import db
+
 logging.basicConfig(level=os.getenv("LOG_LEVEL", "INFO"))
 logger = logging.getLogger(__name__)
 
-AZ_PATH = Path("/var/lib/app/az.txt")
-INSTANCE_ID_PATH = Path("/var/lib/app/instance-id.txt")
+METADATA_DIR = Path(os.getenv("APP_METADATA_DIR", "/var/lib/app"))
+AZ_PATH = METADATA_DIR / "az.txt"
+INSTANCE_ID_PATH = METADATA_DIR / "instance-id.txt"
 
-<<<<<<< HEAD
+app = Flask(__name__)
+app.json.sort_keys = False
+app.config["SEND_FILE_MAX_AGE_DEFAULT"] = timedelta(hours=1)
+
+CONTENT_SECURITY_POLICY = (
+    "default-src 'self'; img-src 'self' data:; style-src 'self'; script-src 'self'; "
+    "object-src 'none'; base-uri 'self'; form-action 'self'; frame-ancestors 'none'"
+)
+
+
 def read_text(path: Union[str, Path], fallback: str = "unknown") -> str:
-    """Read optional instance metadata; missing/unreadable files are non-fatal."""
-=======
-
-def read_text(path: Union[str, Path], fallback: str = "unknown") -> str:
-    """Read optional instance metadata without failing the web process.
-
-    Union[] is intentionally used instead of the newer PEP 604 union syntax
-    because the supported Amazon Linux runtime may provide Python 3.9.
-    """
->>>>>>> 71250862fd348fd167e0e034b6f505b43e8e9250
+    """Read optional instance metadata; a missing or unreadable file is never fatal."""
     try:
         return Path(path).read_text(encoding="utf-8").strip() or fallback
     except OSError as error:
@@ -37,32 +46,117 @@ def read_text(path: Union[str, Path], fallback: str = "unknown") -> str:
         return fallback
 
 
+def instance_meta() -> Dict[str, str]:
+    return {"az": read_text(AZ_PATH), "instance_id": read_text(INSTANCE_ID_PATH)}
+
+
+@app.template_filter("money")
+def money(cents: Any) -> str:
+    return "${:,.2f}".format(int(cents) / 100)
+
+
+@app.context_processor
+def inject_globals() -> Dict[str, Any]:
+    return {"meta": instance_meta()}
+
+
+@app.after_request
+def set_security_headers(response):
+    response.headers.setdefault("Content-Security-Policy", CONTENT_SECURITY_POLICY)
+    response.headers.setdefault("X-Content-Type-Options", "nosniff")
+    response.headers.setdefault("X-Frame-Options", "DENY")
+    response.headers.setdefault("Referrer-Policy", "strict-origin-when-cross-origin")
+    response.headers.setdefault("Permissions-Policy", "camera=(), microphone=(), geolocation=()")
+    if request.path.startswith(("/api/", "/status", "/ready")):
+        response.headers["Cache-Control"] = "no-store"
+    return response
+
+
 @app.get("/")
 def index():
-    az = read_text(AZ_PATH)
-    instance_id = read_text(INSTANCE_ID_PATH)
-    return render_template_string(
-        """<!doctype html>
-<html lang="en">
-<head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Client Platform</title></head>
-<body>
-  <main>
-    <h1>Secure, Highly Available Web Platform</h1>
-    <p>Served by Availability Zone: <strong>{{ az }}</strong></p>
-    <p>Instance: <strong>{{ instance_id }}</strong></p>
-  </main>
-</body>
-</html>""",
-        az=az,
-        instance_id=instance_id,
-    )
+    query = request.args.get("q", "").strip()[: db.MAX_QUERY_LENGTH]
+    category = request.args.get("category", "").strip()[:40]
+    try:
+        categories = db.list_categories()
+        products = db.list_products(category or None, query or None)
+    except db.DatabaseError:
+        return render_template("index.html", unavailable=True, products=[], categories=[],
+                               query=query, category=category), 503
+    return render_template("index.html", unavailable=False, products=products,
+                           categories=categories, query=query, category=category)
+
+
+@app.get("/products/<int:product_id>")
+def product_detail(product_id: int):
+    try:
+        product = db.get_product(product_id)
+    except db.DatabaseError:
+        return render_template("error.html", code=503, title="Catalog unavailable",
+                               message="The product catalog cannot be reached right now. "
+                                       "Please try again in a moment."), 503
+    if product is None:
+        return render_template("error.html", code=404, title="Product not found",
+                               message="That product does not exist or was removed."), 404
+    return render_template("product.html", product=product)
+
+
+@app.get("/status")
+def status_page():
+    return render_template("status.html", status=build_status())
+
+
+@app.get("/api/products")
+def api_products():
+    query = request.args.get("q", "").strip()[: db.MAX_QUERY_LENGTH]
+    category = request.args.get("category", "").strip()[:40]
+    try:
+        products = db.list_products(category or None, query or None)
+    except db.DatabaseError:
+        return jsonify(error="database_unavailable"), 503
+    return jsonify(count=len(products), products=products)
+
+
+@app.get("/api/status")
+def api_status():
+    payload = build_status()
+    return jsonify(payload), 200 if payload["database"]["connected"] else 503
+
+
+def build_status() -> Dict[str, Any]:
+    database = db.database_status()
+    return {
+        "status": "ok" if database["connected"] else "degraded",
+        "application": {
+            **instance_meta(),
+            "runtime": "Python " + platform.python_version(),
+            "path": "ALB \u2192 Nginx \u2192 Gunicorn \u2192 Flask \u2192 RDS",
+        },
+        "database": database,
+    }
 
 
 @app.get("/health")
 def health():
-    # The endpoint is intentionally independent of the optional RDS tier.
+    # Liveness only. Keep the ALB health check independent from the database.
     return "OK", 200, {"Content-Type": "text/plain; charset=utf-8"}
+
+
+@app.get("/ready")
+def ready():
+    database = db.database_status()
+    return jsonify(ready=database["connected"]), 200 if database["connected"] else 503
+
+
+@app.errorhandler(404)
+def not_found(_error):
+    return render_template("error.html", code=404, title="Page not found",
+                           message="The page you are looking for does not exist."), 404
+
+
+@app.errorhandler(500)
+def server_error(_error):
+    return render_template("error.html", code=500, title="Something went wrong",
+                           message="An unexpected error occurred. It has been logged."), 500
 
 
 if __name__ == "__main__":

@@ -11,10 +11,27 @@ data "aws_ssm_parameter" "al2023" {
   name = "/aws/service/ami-amazon-linux-latest/al2023-ami-kernel-default-x86_64"
 }
 
-locals {
+data "aws_region" "current" {}
+data "aws_caller_identity" "current" {}
 
+locals {
   # if var.ami_id is null, use the latest Amazon Linux 2023 AMI; otherwise, use the pinned AMI.
   resolved_ami_id = coalesce(var.ami_id, data.aws_ssm_parameter.al2023.value)
+
+  # The application (everything under app-src/) is published as an immutable, content-addressed
+  # release in a private S3 bucket. Instances download it at boot and verify every file against
+  # the SHA-256 manifest below, so a code change yields a new release prefix, a new launch
+  # template version and a rolling instance refresh - with no user-data size limit to worry about.
+  app_src_dir = "${path.module}/app-src"
+
+  app_file_names = sort([
+    for f in fileset(local.app_src_dir, "**") : f
+    if !endswith(f, ".pyc") && !startswith(f, "__pycache__")
+  ])
+
+  app_manifest = join("\n", [for f in local.app_file_names : "${filesha256("${local.app_src_dir}/${f}")}  ${f}"])
+  app_release  = substr(sha256(local.app_manifest), 0, 16)
+  app_bucket   = "${var.name_prefix}-app-${data.aws_caller_identity.current.account_id}"
 }
 
 data "aws_iam_policy_document" "ec2_assume_role" {
@@ -45,8 +62,112 @@ resource "aws_iam_instance_profile" "ec2_ssm" {
   role = aws_iam_role.ec2_ssm.name
 }
 
-# this policy grants the EC2 instance permission to read the database secret from Secrets Manager,
-#  so it can connect to the RDS instance.
+# ---------------------------------------------------------------------------
+# Application release bucket: private, encrypted, TLS-only, never public.
+# ---------------------------------------------------------------------------
+resource "aws_s3_bucket" "app" {
+  bucket        = local.app_bucket
+  force_destroy = true # build artifacts only; every release is reproducible from Git
+  tags          = var.tags
+}
+
+resource "aws_s3_bucket_public_access_block" "app" {
+  bucket                  = aws_s3_bucket.app.id
+  block_public_acls       = true
+  block_public_policy     = true
+  ignore_public_acls      = true
+  restrict_public_buckets = true
+}
+
+resource "aws_s3_bucket_ownership_controls" "app" {
+  bucket = aws_s3_bucket.app.id
+  rule {
+    object_ownership = "BucketOwnerEnforced"
+  }
+}
+
+resource "aws_s3_bucket_server_side_encryption_configuration" "app" {
+  bucket = aws_s3_bucket.app.id
+  rule {
+    apply_server_side_encryption_by_default {
+      sse_algorithm = "AES256"
+    }
+  }
+}
+
+data "aws_iam_policy_document" "app_bucket" {
+  statement {
+    sid       = "DenyInsecureTransport"
+    effect    = "Deny"
+    actions   = ["s3:*"]
+    resources = [aws_s3_bucket.app.arn, "${aws_s3_bucket.app.arn}/*"]
+    principals {
+      type        = "*"
+      identifiers = ["*"]
+    }
+    condition {
+      test     = "Bool"
+      variable = "aws:SecureTransport"
+      values   = ["false"]
+    }
+  }
+}
+
+resource "aws_s3_bucket_policy" "app" {
+  bucket     = aws_s3_bucket.app.id
+  policy     = data.aws_iam_policy_document.app_bucket.json
+  depends_on = [aws_s3_bucket_public_access_block.app]
+}
+
+resource "aws_s3_object" "app" {
+  for_each    = toset(local.app_file_names)
+  bucket      = aws_s3_bucket.app.id
+  key         = "releases/${local.app_release}/${each.value}"
+  source      = "${local.app_src_dir}/${each.value}"
+  source_hash = filemd5("${local.app_src_dir}/${each.value}")
+}
+
+data "aws_iam_policy_document" "read_app_release" {
+  statement {
+    sid       = "ListReleases"
+    actions   = ["s3:ListBucket"]
+    resources = [aws_s3_bucket.app.arn]
+    condition {
+      test     = "StringLike"
+      variable = "s3:prefix"
+      values   = ["releases/*"]
+    }
+  }
+
+  statement {
+    sid       = "ReadReleases"
+    actions   = ["s3:GetObject"]
+    resources = ["${aws_s3_bucket.app.arn}/releases/*"]
+  }
+}
+
+resource "aws_iam_role_policy" "read_app_release" {
+  name   = "${var.name_prefix}-read-app-release"
+  role   = aws_iam_role.ec2_ssm.id
+  policy = data.aws_iam_policy_document.read_app_release.json
+}
+
+# Least privilege: the instances may read exactly one secret (the RDS-managed master
+# credentials) and nothing else. The password is fetched at runtime and never written to disk.
+data "aws_iam_policy_document" "read_db_secret" {
+  statement {
+    sid       = "ReadDatabaseSecret"
+    actions   = ["secretsmanager:GetSecretValue"]
+    resources = [var.db_secret_arn]
+  }
+}
+
+resource "aws_iam_role_policy" "read_db_secret" {
+  name   = "${var.name_prefix}-read-db-secret"
+  role   = aws_iam_role.ec2_ssm.id
+  policy = data.aws_iam_policy_document.read_db_secret.json
+}
+
 resource "aws_launch_template" "app" {
   name          = var.launch_template_name
   image_id      = local.resolved_ami_id
@@ -69,8 +190,14 @@ resource "aws_launch_template" "app" {
   }
 
   user_data = base64encode(templatefile("${path.module}/user-data.sh.tftpl", {
-    app_py_b64       = filebase64("${path.module}/app-src/app.py")
-    requirements_b64 = filebase64("${path.module}/app-src/requirements.txt")
+    app_bucket    = aws_s3_bucket.app.id
+    app_release   = local.app_release
+    app_manifest  = local.app_manifest
+    db_host       = var.db_host
+    db_port       = var.db_port
+    db_name       = var.db_name
+    db_secret_arn = var.db_secret_arn
+    aws_region    = data.aws_region.current.name
   }))
 
   tag_specifications {
@@ -102,6 +229,13 @@ resource "aws_autoscaling_group" "app" {
 
   target_group_arns = [var.target_group_arn]
   health_check_type = "ELB"
+
+  # Instances download the release and read the DB secret during boot, so these must exist first.
+  depends_on = [
+    aws_s3_object.app,
+    aws_iam_role_policy.read_app_release,
+    aws_iam_role_policy.read_db_secret,
+  ]
 
   launch_template {
     id      = aws_launch_template.app.id

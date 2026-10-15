@@ -1,0 +1,4 @@
+# Shell templates and scripts break on Linux with CRLF endings: always check out LF.
+* text=auto eol=lf
+*.png binary
+*.jpg binary

@@ -256,7 +256,7 @@ git push -u origin main
 | `AWS_DEPLOY_ROLE_ARN` | ARN لدور IAM مخصص لـ GitHub OIDC |
 | `AWS_REGION` | مثل `us-east-1` |
 | `TF_STATE_BUCKET` | اسم S3 state bucket من Bootstrap |
-| `TF_STATE_KEY_PREFIX` | مثل `ecomm-platform` |
+| `TF_STATE_KEY` | اختياري؛ الافتراضي `ecomm-platform/<env>/terraform.tfstate` ويجب أن يطابق مفتاح الـ state الأصلي |
 | `TF_DB_INSTANCE_CLASS` | مطلوب لـ prod، مثل `db.t3.micro` للاختبار فقط |
 | `TF_ALARM_EMAIL` | اختياري لتنبيهات SNS |
 

@@ -79,6 +79,27 @@ variable "enable_instance_refresh" {
   default     = true
 }
 
+variable "db_host" {
+  description = "RDS endpoint hostname (without port) the application connects to."
+  type        = string
+}
+
+variable "db_port" {
+  description = "RDS listener port."
+  type        = number
+  default     = 3306
+}
+
+variable "db_name" {
+  description = "Database (schema) name created by the RDS instance."
+  type        = string
+}
+
+variable "db_secret_arn" {
+  description = "ARN of the Secrets Manager secret holding the RDS-managed master credentials."
+  type        = string
+}
+
 variable "tags" {
   type    = map(string)
   default = {}

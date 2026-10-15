@@ -8,6 +8,36 @@ Each issue documents the problem, cause, and practical recovery.
 
 ---
 
+<a id="state-mismatch"></a>
+## 0. `EntityAlreadyExists` and `VpcLimitExceeded` in the GitHub Actions apply
+
+**Symptoms**
+
+```text
+Error: creating IAM Role (ecomm-platform-dev-ec2-ssm-role): EntityAlreadyExists
+Error: creating IAM Role (ecomm-platform-dev-rds-monitoring-role): EntityAlreadyExists
+Error: creating EC2 VPC: VpcLimitExceeded: The maximum number of VPCs has been reached.
+```
+
+**Root cause.** Terraform believed nothing existed. The workflow initialised the S3 backend with
+a different state key (`<prefix>/dev.tfstate`) than the one used by the first local apply
+(`ecomm-platform/dev/terraform.tfstate`), so it saw an empty state and tried to create every
+resource again. The resources already existed (IAM roles) or consumed quota (the earlier VPC),
+which produced the errors above. IAM permissions were not the problem.
+
+**Fix**
+
+1. Make the workflow use the original key. It now defaults to
+   `ecomm-platform/<environment>/terraform.tfstate`; override with the environment variable
+   `TF_STATE_KEY` only if your key differs.
+2. Verify before applying: `aws s3 ls s3://<bucket>/ecomm-platform/dev/` should list
+   `terraform.tfstate`, and `terraform state list` should show the existing resources.
+3. If the original state is really gone, either destroy the orphaned stack manually or
+   `terraform import` each resource. Do not delete IAM roles that a live instance profile uses.
+4. For `VpcLimitExceeded`, delete unused VPCs in the region (default quota: 5) or request an
+   increase under Service Quotas. `scripts/preflight.sh` now detects both situations before the
+   plan and prints the offending VPCs.
+
 ## 1. Terraform Backend Bucket Did Not Exist
 
 ### Problem

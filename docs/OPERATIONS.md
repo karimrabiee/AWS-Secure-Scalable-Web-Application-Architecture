@@ -91,7 +91,7 @@ sudo ss -lntp
 
 Expected results: Gunicorn is listening on `127.0.0.1:8000`; both local health checks return `HTTP 200`; Nginx syntax validation succeeds. If port 8000 is unavailable, read the first Python/Gunicorn exception in `journalctl` before changing configuration. The bootstrap log records package installation, import preflight, and final health-check failures without enabling shell tracing.
 
-The source delivery chain is `app-src/app.py` and `requirements.txt` → `filebase64()` in the compute module → Launch Template user data → Auto Scaling Group instance refresh. After changing application source, run local tests and `terraform plan`; confirm the plan changes the Launch Template and refreshes the ASG before applying it. Never manually patch only one instance as the permanent fix.
+The source delivery chain is `app-src/` (every file) → content-hashed release in the private S3 release bucket → Launch Template user data (release id + SHA-256 manifest) → Auto Scaling Group instance refresh. Instances verify every downloaded file against the manifest before starting. After changing application source, run local tests and `terraform plan`; confirm the plan changes the Launch Template and refreshes the ASG before applying it. Never manually patch only one instance as the permanent fix.
 
 ## 6. Test the application
 

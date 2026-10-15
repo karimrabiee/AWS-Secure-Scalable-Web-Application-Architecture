@@ -1,0 +1,56 @@
+{% extends "base.html" %}
+{% block title %}Nimbus Store - Premium desk gear{% endblock %}
+{% block content %}
+<section class="hero">
+  <p class="eyebrow">Spring collection</p>
+  <h1>Premium gear for focused work</h1>
+  <p class="lead">Audio, input, displays and workspace essentials. Every product you see is read live from a Multi-AZ Amazon RDS database.</p>
+  <form class="search" method="get" action="{{ url_for('index') }}" role="search">
+    {% if category %}<input type="hidden" name="category" value="{{ category }}">{% endif %}
+    <label class="visually-hidden" for="q">Search products</label>
+    <input id="q" name="q" type="search" value="{{ query }}" maxlength="80" placeholder="Search keyboards, monitors, audio&hellip;" autocomplete="off">
+    <button class="btn" type="submit">Search</button>
+  </form>
+</section>
+
+{% if unavailable %}
+<section class="notice notice-error" role="alert">
+  <h2>The catalog is temporarily unavailable</h2>
+  <p>We could not reach the product database. The site is still running &mdash; please retry in a moment.</p>
+  <a class="btn btn-ghost" href="{{ url_for('status_page') }}">View platform status</a>
+</section>
+{% else %}
+<nav class="chips" aria-label="Categories">
+  <a class="chip{% if not category %} is-active{% endif %}" href="{{ url_for('index', q=query or None) }}">All</a>
+  {% for c in categories %}
+  <a class="chip{% if category == c.category %} is-active{% endif %}" href="{{ url_for('index', category=c.category, q=query or None) }}">{{ c.category }} <span class="chip-count">{{ c.total }}</span></a>
+  {% endfor %}
+</nav>
+
+{% if products %}
+<section class="grid" aria-label="Products">
+  {% for p in products %}
+  <article class="card">
+    <a class="card-media tone-{{ p.category|lower }}" href="{{ url_for('product_detail', product_id=p.id) }}" aria-label="{{ p.name }}">
+      <svg class="icon" viewBox="0 0 24 24" aria-hidden="true"><use href="#i-{{ p.icon }}"/></svg>
+    </a>
+    <div class="card-body">
+      <p class="card-cat">{{ p.category }}</p>
+      <h2 class="card-title"><a href="{{ url_for('product_detail', product_id=p.id) }}">{{ p.name }}</a></h2>
+      <p class="card-text">{{ p.description }}</p>
+      <div class="card-foot">
+        <span class="price">{{ p.price_cents|money }}</span>
+        {% if p.stock > 0 %}<span class="stock stock-in">{{ p.stock }} in stock</span>{% else %}<span class="stock stock-out">Sold out</span>{% endif %}
+      </div>
+    </div>
+  </article>
+  {% endfor %}
+</section>
+{% else %}
+<section class="notice">
+  <h2>No products found</h2>
+  <p>Try a different search term or <a href="{{ url_for('index') }}">browse everything</a>.</p>
+</section>
+{% endif %}
+{% endif %}
+{% endblock %}

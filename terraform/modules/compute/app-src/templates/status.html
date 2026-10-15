@@ -1,0 +1,41 @@
+{% extends "base.html" %}
+{% block title %}Platform status - Nimbus Store{% endblock %}
+{% block content %}
+{% set db = status.database %}
+<section class="hero hero-compact">
+  <p class="eyebrow">Live platform status</p>
+  <h1>Application and database health</h1>
+  <p class="lead">Probed on every page load and refreshed every 15 seconds. Nothing on this page is hard-coded.</p>
+</section>
+
+<section class="status-grid" id="status-root" data-endpoint="{{ url_for('api_status') }}">
+  <article class="panel">
+    <header class="panel-head">
+      <h2>Amazon RDS for MySQL</h2>
+      <span class="badge {{ 'badge-ok' if db.connected else 'badge-bad' }}" data-field="db-badge">{{ 'Connected' if db.connected else 'Unavailable' }}</span>
+    </header>
+    <dl class="kv">
+      <div><dt>Engine</dt><dd data-field="db-version">{% if db.connected %}{{ db.engine }} {{ db.version }}{% else %}&ndash;{% endif %}</dd></div>
+      <div><dt>Encryption in transit</dt><dd data-field="db-tls">{% if db.connected %}{% if db.tls %}TLS &middot; {{ db.cipher }}{% else %}Not encrypted{% endif %}{% else %}&ndash;{% endif %}</dd></div>
+      <div><dt>Query round trip</dt><dd data-field="db-latency">{% if db.connected %}{{ db.latency_ms }} ms{% else %}&ndash;{% endif %}</dd></div>
+      <div><dt>Catalog rows</dt><dd data-field="db-products">{% if db.connected %}{{ db.products }} products{% else %}&ndash;{% endif %}</dd></div>
+    </dl>
+  </article>
+
+  <article class="panel">
+    <header class="panel-head">
+      <h2>Application tier</h2>
+      <span class="badge badge-ok">Running</span>
+    </header>
+    <dl class="kv">
+      <div><dt>Availability Zone</dt><dd data-field="app-az">{{ status.application.az }}</dd></div>
+      <div><dt>Instance</dt><dd data-field="app-instance"><code>{{ status.application.instance_id }}</code></dd></div>
+      <div><dt>Runtime</dt><dd data-field="app-runtime">{{ status.application.runtime }}</dd></div>
+      <div><dt>Request path</dt><dd>{{ status.application.path }}</dd></div>
+    </dl>
+  </article>
+</section>
+
+<p class="muted small">Refresh a few times: the Availability Zone and instance change as the load balancer spreads requests across the Auto Scaling group.
+Machine-readable status is available at <a href="{{ url_for('api_status') }}">/api/status</a>.</p>
+{% endblock %}
