@@ -6,7 +6,7 @@
 
 | Check | Command / method | Result |
 |---|---|---|
-| Unit + contract tests | `pytest -q` (Python 3.11 and 3.12) | **57 passed** on each (48 app/DB-layer/infra-contract + 9 DB integration) |
+| Unit + contract tests | `pytest -q` (Python 3.11 and 3.12) | **60 passed** on each (51 app/DB-layer/infra-contract + 9 DB integration; the 9 skip when no database is configured) |
 | DB integration (real engine) | `TEST_DB_HOST=127.0.0.1 pytest tests/test_db_integration.py` against MariaDB 10.11 (CI uses `mysql:8.4`) | 9 passed: schema/seed idempotent, concurrent init safe, parameterized reads/writes, order total from stored price, unknown product rejected, **credential rotation recovered**, wrong credentials fail closed with a generic error |
 | Stability | full suite repeated 25× | 25/25 green after the schema-init race fix (see below) |
 | Lint | `ruff check .` | All checks passed |

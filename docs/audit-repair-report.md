@@ -26,7 +26,7 @@ Scope: repository only. No AWS call, no `terraform apply/destroy` was performed.
 - SQL: parameterized only; LIKE input escaped; order total computed server-side.
 - App: JSON-only POST, input validation, CSP and security headers, generic error bodies, no stack traces.
 - Instance: IMDSv2, no SSH, root-owned code, hardened systemd unit, secret read limited to one ARN.
-- CI role: PassRole constrained, state prefix-scoped, no wildcard admin.
+- CI role: PassRole constrained, exact-object state access with an unconditional `s3:ListBucket` (a prefix condition caused a `HeadObject 403`), no wildcard admin.
 - Accepted limitations: master DB user in the app; HTTP by default; Checkov advisory findings listed in the README.
 
 ## 4. Remaining risks / manual steps
@@ -37,3 +37,11 @@ Scope: repository only. No AWS call, no `terraform apply/destroy` was performed.
 4. After the first apply, check `/ready` through the ALB; if 503, see `docs/OPERATIONS.md` §5.
 5. Confirm on a real instance that `python3.11` + `venv` install succeeds on the current AL2023 AMI.
 6. Run a dedicated secret scanner over git history before making the repo public.
+
+## 5. Follow-up: CI failures after merging two lines of work (2026-10-15)
+
+| Symptom | Root cause | Fix |
+|---|---|---|
+| CI `Application (3.11/3.12)`: `KeyError: 'name'`, `ModuleNotFoundError: render_user_data`, 9+ failing contract tests | `main` contained a second, incompatible implementation (S3 release-bucket design): `tests/test_repo_contract.py`, the old `tests/test_source_contract.py`, `scripts/render_user_data.py`, `tests/fakes.py`, `tests/test_integration_mysql.py`, duplicate `static/app.js`/`style.css`/`favicon.svg`, `templates/product.html` | Removed those files; one implementation remains (user-data embeds the app, no release bucket) |
+| `user-data is 15931 bytes (hard limit 16384)` | The leftover duplicate static files were also counted into the payload | Removed with the duplicates |
+| Plan job: `HeadObject ... 403 Forbidden` on the state object | The reference IAM policy conditioned `s3:ListBucket` on `s3:prefix`; for a missing/unreadable key S3 then answers 403 | Unconditional `ListBucket` on the bucket (see `docs/iam/README.md`); the role attached in AWS must be updated manually |
