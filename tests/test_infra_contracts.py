@@ -174,6 +174,29 @@ def test_imdsv2_required_and_asg_uses_elb_health():
     assert "version = aws_launch_template.app.latest_version" in text
 
 
+def test_runtime_requirements_are_exactly_pinned():
+    pins = [line.strip() for line in (APP_SRC / "requirements.txt").read_text(encoding="utf-8").splitlines()
+            if line.strip() and not line.strip().startswith("#")]
+    assert pins
+    for line in pins:
+        assert re.fullmatch(r"[A-Za-z0-9_.-]+==[0-9]\S*", line), line
+
+
+def test_templates_comply_with_the_content_security_policy():
+    for path in (APP_SRC / "templates").glob("*.html"):
+        html = path.read_text(encoding="utf-8")
+        assert not re.search(r"\sstyle=", html), f"{path.name}: inline style"
+        assert not re.search(r"\son[a-z]+=", html), f"{path.name}: inline event handler"
+        for script in re.findall(r"<script\b[^>]*>(.*?)</script>", html, re.DOTALL):
+            assert script.strip() == "", f"{path.name}: inline script"
+
+
+def test_database_password_is_never_logged_or_written_to_disk():
+    source = (APP_SRC / "db.py").read_text(encoding="utf-8")
+    assert not re.search(r"logger\.\w+\([^)]*password", source)
+    assert not re.search(r"(?<![\w.])open\(", source)
+
+
 # --------------------------------------------------------- bootstrap script --
 def render_user_data():
     """Minimal re-implementation of Terraform templatefile() for this template."""

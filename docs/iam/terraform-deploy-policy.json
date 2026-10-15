@@ -5,14 +5,7 @@
       "Sid": "StateBucketList",
       "Effect": "Allow",
       "Action": "s3:ListBucket",
-      "Resource": "arn:aws:s3:::ecomm-platform-tfstate-768477844931",
-      "Condition": {
-        "StringLike": {
-          "s3:prefix": [
-            "ecomm-platform/dev/*"
-          ]
-        }
-      }
+      "Resource": "arn:aws:s3:::ecomm-platform-tfstate-768477844931"
     },
     {
       "Sid": "StateObjectReadWriteDevOnly",
