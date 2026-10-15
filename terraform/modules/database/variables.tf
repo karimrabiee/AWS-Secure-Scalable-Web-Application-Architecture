@@ -85,6 +85,18 @@ variable "parameter_group_name" {
   default     = null
 }
 
+variable "enforce_tls" {
+  description = "Create a parameter group with require_secure_transport=1 so MySQL rejects unencrypted connections. Ignored when parameter_group_name is set."
+  type        = bool
+  default     = false
+}
+
+variable "parameter_group_family" {
+  description = "DB parameter group family used when enforce_tls is true. Must match the major engine version."
+  type        = string
+  default     = "mysql8.4"
+}
+
 variable "kms_key_id" {
   description = "UNKNOWN by default - if the real instance uses a customer-managed KMS key, set its ARN here. Null uses the AWS-managed default RDS key."
   type        = string

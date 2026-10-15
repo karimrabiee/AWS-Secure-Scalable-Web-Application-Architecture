@@ -11,10 +11,24 @@ data "aws_ssm_parameter" "al2023" {
   name = "/aws/service/ami-amazon-linux-latest/al2023-ami-kernel-default-x86_64"
 }
 
-locals {
+data "aws_region" "current" {}
 
+locals {
   # if var.ami_id is null, use the latest Amazon Linux 2023 AMI; otherwise, use the pinned AMI.
   resolved_ami_id = coalesce(var.ami_id, data.aws_ssm_parameter.al2023.value)
+
+  # The whole application (Python, templates, static assets) is embedded in the
+  # instance user-data. Only explicit patterns are included so stray files such
+  # as __pycache__/*.pyc or editor backups can never end up on an instance.
+  app_src_dir = "${path.module}/app-src"
+  app_file_names = setunion(
+    fileset(local.app_src_dir, "*.py"),
+    fileset(local.app_src_dir, "requirements.txt"),
+    fileset(local.app_src_dir, "templates/*.html"),
+    fileset(local.app_src_dir, "static/css/*.css"),
+    fileset(local.app_src_dir, "static/js/*.js"),
+  )
+  app_files = { for name in local.app_file_names : name => file("${local.app_src_dir}/${name}") }
 }
 
 data "aws_iam_policy_document" "ec2_assume_role" {
@@ -45,8 +59,22 @@ resource "aws_iam_instance_profile" "ec2_ssm" {
   role = aws_iam_role.ec2_ssm.name
 }
 
-# this policy grants the EC2 instance permission to read the database secret from Secrets Manager,
-#  so it can connect to the RDS instance.
+# Least privilege: the application may read exactly ONE secret - the RDS-managed
+# master credential - and nothing else in Secrets Manager. No wildcard resources.
+data "aws_iam_policy_document" "read_db_secret" {
+  statement {
+    sid       = "ReadDatabaseSecret"
+    actions   = ["secretsmanager:GetSecretValue", "secretsmanager:DescribeSecret"]
+    resources = [var.db_secret_arn]
+  }
+}
+
+resource "aws_iam_role_policy" "read_db_secret" {
+  name   = "${var.name_prefix}-read-db-secret"
+  role   = aws_iam_role.ec2_ssm.id
+  policy = data.aws_iam_policy_document.read_db_secret.json
+}
+
 resource "aws_launch_template" "app" {
   name          = var.launch_template_name
   image_id      = local.resolved_ami_id
@@ -68,9 +96,16 @@ resource "aws_launch_template" "app" {
     http_put_response_hop_limit = 1
   }
 
-  user_data = base64encode(templatefile("${path.module}/user-data.sh.tftpl", {
-    app_py_b64       = filebase64("${path.module}/app-src/app.py")
-    requirements_b64 = filebase64("${path.module}/app-src/requirements.txt")
+  # EC2 limits user-data to 16 KB *before* base64. The application source is
+  # text, so gzip keeps it far below that limit; cloud-init decompresses
+  # gzip user-data transparently.
+  user_data = base64gzip(templatefile("${path.module}/user-data.sh.tftpl", {
+    app_files     = local.app_files
+    db_host       = var.db_address
+    db_port       = var.db_port
+    db_name       = var.db_name
+    db_secret_arn = var.db_secret_arn
+    aws_region    = data.aws_region.current.name
   }))
 
   tag_specifications {
@@ -102,6 +137,15 @@ resource "aws_autoscaling_group" "app" {
 
   target_group_arns = [var.target_group_arn]
   health_check_type = "ELB"
+  # Bootstrap installs packages and Python dependencies (a few minutes). Without a
+  # generous grace period the ASG could terminate instances that are still booting.
+  health_check_grace_period = var.health_check_grace_period
+
+  # Instances must not boot before their role can read the database secret.
+  depends_on = [
+    aws_iam_role_policy.read_db_secret,
+    aws_iam_role_policy_attachment.ec2_ssm_core,
+  ]
 
   launch_template {
     id      = aws_launch_template.app.id

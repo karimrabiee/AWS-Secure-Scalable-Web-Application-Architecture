@@ -1,116 +1,130 @@
-<<<<<<< HEAD
-"""Behavioral tests for the Flask sample application."""
-from pathlib import Path
-import sys
-
-import pytest
-
-pytest.importorskip("flask", reason="Install requirements-dev.txt to run Flask tests")
-
-APP_SOURCE = Path(__file__).resolve().parents[1] / "terraform" / "modules" / "compute" / "app-src"
-sys.path.insert(0, str(APP_SOURCE))
-=======
-import sys
+"""Behavioural tests for the Flask application (no AWS, no real database)."""
+import logging
 from pathlib import Path
 
-import pytest
-
-APP_SRC = Path(__file__).parents[1] / "terraform" / "modules" / "compute" / "app-src"
-sys.path.insert(0, str(APP_SRC))
->>>>>>> 71250862fd348fd167e0e034b6f505b43e8e9250
-
-import app as application  # noqa: E402
+import app as application
+from conftest import FakeDatabase
 
 
-@pytest.fixture()
-<<<<<<< HEAD
-def client():
-    application.app.config.update(TESTING=True)
-    with application.app.test_client() as test_client:
-        yield test_client
-
-
-def test_home_page_returns_success_and_displays_metadata(client, monkeypatch):
-    metadata = {
-        "/var/lib/app/az.txt": "us-east-1a",
-        "/var/lib/app/instance-id.txt": "i-test-instance",
-    }
-    monkeypatch.setattr(application, "read_text", lambda path, fallback="unknown": metadata.get(str(path), fallback))
-=======
-def client(tmp_path, monkeypatch):
-    monkeypatch.setattr(application, "AZ_PATH", tmp_path / "az.txt")
-    monkeypatch.setattr(application, "INSTANCE_ID_PATH", tmp_path / "instance-id.txt")
-    application.app.config.update(TESTING=True)
-    return application.app.test_client()
-
-
-def test_home_page_returns_expected_response(client, tmp_path):
-    (tmp_path / "az.txt").write_text("us-east-1a\n", encoding="utf-8")
-    (tmp_path / "instance-id.txt").write_text("i-test123\n", encoding="utf-8")
->>>>>>> 71250862fd348fd167e0e034b6f505b43e8e9250
-
-    response = client.get("/")
-
+def test_home_lists_products_read_from_the_database(make_client, fake_db):
+    response = make_client(fake_db).get("/")
     assert response.status_code == 200
     assert b"Secure, Highly Available Web Platform" in response.data
-    assert b"us-east-1a" in response.data
-<<<<<<< HEAD
-    assert b"i-test-instance" in response.data
+    assert b"Alpha Keyboard" in response.data and b"$119.00" in response.data
+    assert b"us-east-1a" in response.data and b"i-test123" in response.data
 
 
-def test_health_endpoint_returns_expected_response(client):
-=======
-    assert b"i-test123" in response.data
+def test_home_filters_by_category_and_search(make_client, fake_db):
+    client = make_client(fake_db)
+    assert b"Beta Headphones" not in client.get("/?category=Peripherals").data
+    assert b"Alpha Keyboard" not in client.get("/?q=headphones").data
 
 
-def test_health_is_database_independent(client):
->>>>>>> 71250862fd348fd167e0e034b6f505b43e8e9250
+def test_health_is_database_independent(make_client):
+    client = make_client(FakeDatabase(available=False))
     response = client.get("/health")
-
     assert response.status_code == 200
     assert response.get_data(as_text=True) == "OK"
     assert response.mimetype == "text/plain"
 
 
-<<<<<<< HEAD
-def test_missing_metadata_file_uses_fallback_and_logs_warning(tmp_path, caplog):
-    missing_file = tmp_path / "not-created.txt"
+def test_ready_reports_503_when_database_is_down(make_client):
+    response = make_client(FakeDatabase(available=False)).get("/ready")
+    assert response.status_code == 503
+    assert response.get_json()["status"] == "degraded"
 
-    assert application.read_text(missing_file) == "unknown"
+
+def test_ready_reports_200_when_database_is_up(make_client, fake_db):
+    response = make_client(fake_db).get("/ready")
+    assert response.status_code == 200
+    assert response.get_json()["database"]["state"] == "connected"
+
+
+def test_home_degrades_gracefully_without_database(make_client):
+    response = make_client(FakeDatabase(available=False)).get("/")
+    assert response.status_code == 200
+    assert b"temporarily unavailable" in response.data
+
+
+def test_api_returns_503_json_without_database(make_client):
+    client = make_client(FakeDatabase(available=False))
+    response = client.get("/api/products")
+    assert response.status_code == 503
+    assert response.get_json() == {"error": "database_unavailable"}
+
+
+def test_status_page(make_client, fake_db):
+    client = make_client(fake_db)
+    page = client.get("/status")
+    assert page.status_code == 200
+    assert b"us-east-1a" in page.data and b"Connected" in page.data and b"TLS_AES_256_GCM_SHA384" in page.data
+
+
+def test_create_order_computes_total_server_side(make_client, fake_db):
+    client = make_client(fake_db)
+    response = client.post("/api/orders", json={"product_id": 1, "quantity": 2, "total_cents": 1})
+    assert response.status_code == 201
+    assert response.get_json()["total_cents"] == 23800  # client-supplied total ignored
+    assert fake_db.orders[0]["served_by"] == "i-test123"
+
+
+def test_create_order_validation(make_client, fake_db):
+    client = make_client(fake_db)
+    assert client.post("/api/orders", data="product_id=1").status_code == 400
+    assert client.post("/api/orders", json=[1]).status_code == 400
+    assert client.post("/api/orders", json={"product_id": "1", "quantity": 1}).status_code == 400
+    assert client.post("/api/orders", json={"product_id": True, "quantity": 1}).status_code == 400
+    assert client.post("/api/orders", json={"product_id": 1, "quantity": 0}).status_code == 400
+    assert client.post("/api/orders", json={"product_id": 1, "quantity": 99}).status_code == 400
+    assert client.post("/api/orders", json={"product_id": 999, "quantity": 1}).status_code == 404
+    assert fake_db.orders == []
+
+
+def test_security_headers_present(make_client, fake_db):
+    headers = make_client(fake_db).get("/").headers
+    assert "default-src 'self'" in headers["Content-Security-Policy"]
+    assert headers["X-Content-Type-Options"] == "nosniff"
+    assert headers["X-Frame-Options"] == "DENY"
+
+
+def test_unknown_routes_and_methods(make_client, fake_db):
+    client = make_client(fake_db)
+    assert client.get("/missing").status_code == 404
+    assert client.get("/api/missing").get_json() == {"error": "not_found"}
+    assert client.delete("/api/orders").status_code == 405
+
+
+def test_unexpected_error_hides_stack_trace(make_client, fake_db, monkeypatch):
+    def boom(*args, **kwargs):
+        raise RuntimeError("secret-internal-detail")
+
+    monkeypatch.setattr(fake_db, "list_categories", boom)
+    response = make_client(fake_db).get("/")
+    assert response.status_code == 500
+    assert b"secret-internal-detail" not in response.data
+    assert b"Traceback" not in response.data
+
+
+def test_missing_metadata_files_use_fallback_and_log(tmp_path, caplog):
+    with caplog.at_level(logging.WARNING):
+        assert application.read_text(tmp_path / "missing.txt") == "unknown"
     assert "Unable to read application metadata file" in caplog.text
 
 
 def test_blank_metadata_file_uses_fallback(tmp_path):
-    empty_file = tmp_path / "empty.txt"
-    empty_file.write_text("  \n", encoding="utf-8")
-
-    assert application.read_text(empty_file, fallback="n/a") == "n/a"
-
-
-def test_filesystem_error_is_non_fatal_and_logged(monkeypatch, caplog, tmp_path):
-    def deny_read(self, *args, **kwargs):
-        raise PermissionError("simulated permission denial")
-
-    monkeypatch.setattr(Path, "read_text", deny_read)
-
-    assert application.read_text(tmp_path / "protected.txt", fallback="safe") == "safe"
-    assert "simulated permission denial" in caplog.text
-=======
-def test_missing_metadata_uses_safe_fallbacks(client):
-    response = client.get("/")
-
-    assert response.status_code == 200
-    assert b"unknown" in response.data
+    blank = tmp_path / "blank.txt"
+    blank.write_text("  \n", encoding="utf-8")
+    assert application.read_text(blank, fallback="n/a") == "n/a"
 
 
-def test_unexpected_filesystem_error_uses_fallback(client, monkeypatch):
-    def fail_read(*args, **kwargs):
-        raise PermissionError("test-only filesystem failure")
+def test_filesystem_error_is_non_fatal(monkeypatch, tmp_path):
+    def deny(self, *args, **kwargs):
+        raise PermissionError("denied")
 
-    monkeypatch.setattr(Path, "read_text", fail_read)
+    monkeypatch.setattr(Path, "read_text", deny)
+    assert application.read_text(tmp_path / "x.txt", fallback="safe") == "safe"
 
-    response = client.get("/")
 
-    assert response.status_code == 200
-    assert response.data.count(b"unknown") == 2
->>>>>>> 71250862fd348fd167e0e034b6f505b43e8e9250
+def test_module_import_does_not_touch_the_database():
+    # gunicorn imports `app:app`; a database outage must never stop workers booting.
+    assert application.app.extensions["nimbus_db"].settings is not None

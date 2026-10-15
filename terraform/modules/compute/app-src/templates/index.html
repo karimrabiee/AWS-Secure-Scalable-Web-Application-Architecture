@@ -1,0 +1,75 @@
+{% extends "base.html" %}
+{% block title %}Shop{% endblock %}
+{% block content %}
+<section class="hero">
+  <div class="container hero-inner">
+    <div>
+      <p class="eyebrow">Secure · Highly available · Three-tier</p>
+      <h1>Secure, Highly Available Web Platform</h1>
+      <p class="lead">Every product below is read from Amazon RDS and every order is written back to it,
+        through WAF, an ALB and private subnets across two Availability Zones.</p>
+      <div class="actions">
+        <a class="btn btn-p" href="#catalog">Browse catalogue</a>
+        <a class="btn btn-g" href="{{ url_for('status_page') }}">View platform status</a>
+      </div>
+    </div>
+    <ul class="facts" aria-label="Current serving details">
+      <li><span class="l">Instance</span><span class="v">{{ instance_id }}</span></li>
+      <li><span class="l">Availability Zone</span><span class="v">{{ az }}</span></li>
+      <li><span class="l">Database tier</span>
+        <span class="v"><span class="pill {{ 'pill-bad' if db_error else 'pill-ok' }}">{{ 'Unavailable' if db_error else 'Connected' }}</span></span></li>
+    </ul>
+  </div>
+</section>
+
+<section id="catalog" class="container section">
+  <div class="head">
+    <h2>Catalogue</h2>
+    <form class="search" method="get" action="{{ url_for('index') }}#catalog" role="search">
+      {% if active_category %}<input type="hidden" name="category" value="{{ active_category }}">{% endif %}
+      <label class="sr-only" for="q">Search products</label>
+      <input id="q" name="q" type="search" value="{{ query }}" placeholder="Search products" maxlength="64">
+      <button class="btn btn-s" type="submit">Search</button>
+    </form>
+  </div>
+
+  {% if categories %}
+  <nav class="chips" aria-label="Categories">
+    <a class="chip{% if not active_category %} on{% endif %}" href="{{ url_for('index') }}#catalog">All</a>
+    {% for c in categories %}
+    <a class="chip{% if active_category == c.category %} on{% endif %}"
+       href="{{ url_for('index', category=c.category) }}#catalog">{{ c.category }} <span class="count">{{ c.products }}</span></a>
+    {% endfor %}
+  </nav>
+  {% endif %}
+
+  {% if db_error %}
+  <div class="notice notice-bad" role="alert">
+    <strong>The catalogue is temporarily unavailable.</strong>
+    The web tier is healthy, but it cannot reach the database right now. Please try again shortly.
+  </div>
+  {% elif not products %}
+  <div class="notice">No products match your filters.</div>
+  {% else %}
+  <div class="grid">
+    {% for p in products %}
+    <article class="card">
+      <div class="media cat-{{ p.category|lower }}" aria-hidden="true">
+        <span class="icon">{{ p.category[0] }}</span>
+      </div>
+      <div class="body">
+        <span class="tag">{{ p.category }}</span>
+        <h3>{{ p.name }}</h3>
+        <p class="muted">{{ p.description }}</p>
+      </div>
+      <div class="foot">
+        <span class="price">{{ p.price }}</span>
+        <button class="btn btn-s btn-p" type="button" data-order="{{ p.id }}">Order now</button>
+      </div>
+    </article>
+    {% endfor %}
+  </div>
+  <p class="muted small">Demo orders are stored in RDS and listed on the <a href="{{ url_for('status_page') }}">platform status</a> page.</p>
+  {% endif %}
+</section>
+{% endblock %}

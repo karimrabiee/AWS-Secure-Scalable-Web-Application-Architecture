@@ -4,8 +4,10 @@ resource "aws_lb" "main" {
   internal           = false
   load_balancer_type = "application"
   security_groups    = [var.alb_sg_id]
-  subnets            = var.public_subnet_ids
-  tags               = merge(var.tags, { Name = var.alb_name })
+  # Reject malformed HTTP header names instead of forwarding them to the app tier.
+  drop_invalid_header_fields = true
+  subnets                    = var.public_subnet_ids
+  tags                       = merge(var.tags, { Name = var.alb_name })
 
 }
 

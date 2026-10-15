@@ -1,136 +1,119 @@
 #!/bin/bash
+# Application-tier bootstrap: Nginx -> Gunicorn -> Flask -> RDS (Terraform templatefile; $${VAR} = shell).
 set -Eeuo pipefail
-<<<<<<< HEAD
 
-# Keep cloud-init diagnostics available without enabling shell tracing (which
-# could expose future sensitive values in command arguments).
-exec > >(tee -a /var/log/ecomm-app-bootstrap.log | logger -t ecomm-app-bootstrap -s 2>/dev/console) 2>&1
-=======
+LOG_FILE=/var/log/ecomm-bootstrap.log
+APP_DIR=/opt/ecomm-app
+APP_USER=ecomm-app
 
-log() {
-  printf '[ecomm-bootstrap] %s\n' "$*" | tee -a /var/log/ecomm-bootstrap.log
-}
+# Logged to a file and the journal (journalctl -t ecomm-bootstrap). Shell tracing stays off: it could leak values.
+exec > >(tee -a "$LOG_FILE" | logger -t ecomm-bootstrap) 2>&1
+
+# stderr, so it never pollutes values captured with $(...)
+log() { printf '[ecomm-bootstrap] %s\n' "$*" >&2; }
 
 on_error() {
   local line=$1
-  log "Bootstrap failed at line $${line}; inspect /var/log/ecomm-bootstrap.log and cloud-init-output.log"
+  log "ERROR: bootstrap failed at line $${line}; see $LOG_FILE, cloud-init-output.log, journalctl -u ecomm-app"
+  journalctl -u ecomm-app -n 40 --no-pager 2>&1 || true
 }
 trap 'on_error $LINENO' ERR
 
+# retry <attempts> <delay-seconds> <command...>  - bounded, never loops forever.
 retry() {
-  local attempts=$1
-  local delay=$2
+  local attempts=$1 delay=$2 attempt=1
   shift 2
-  local attempt=1
   until "$@"; do
     if (( attempt >= attempts )); then
+      log "ERROR: '$*' failed after $${attempts} attempts"
       return 1
     fi
-    log "Command failed; retry $${attempt}/$${attempts} in $${delay}s"
+    log "Command failed; retry $${attempt}/$${attempts} in $${delay}s: $1"
     sleep "$delay"
     attempt=$((attempt + 1))
   done
 }
 
-# Small, understandable application runtime: Nginx -> Gunicorn -> Flask.
-retry 5 10 dnf install -y nginx python3 python3-pip
->>>>>>> 71250862fd348fd167e0e034b6f505b43e8e9250
+log "Bootstrap started"
 
-APP_DIR=/opt/ecomm-app
+# ---------------------------------------------------------------- packages --
+retry 5 10 dnf install -y nginx python3.11 python3.11-pip curl
+python3.11 -c 'import sys; assert sys.version_info >= (3, 11), sys.version'
+log "Python runtime: $(python3.11 --version)"
+
+# --------------------------------------------------- service account & dirs --
+id "$APP_USER" >/dev/null 2>&1 || useradd --system --home-dir "$APP_DIR" --shell /sbin/nologin "$APP_USER"
 mkdir -p "$APP_DIR" /var/lib/app
+install -d -m 0750 -o root -g "$APP_USER" /etc/ecomm-app
 
-<<<<<<< HEAD
-# Amazon Linux 2023 supplies Python 3.9 by default in the currently deployed
-# environment. The application is intentionally compatible with Python 3.9.
-dnf install -y nginx python3 python3-pip curl
-
-# IMDSv2 only; no instance metadata values are secrets.
-TOKEN=$(curl --silent --show-error --fail --max-time 5 -X PUT \
-  -H "X-aws-ec2-metadata-token-ttl-seconds: 60" \
-  http://169.254.169.254/latest/api/token)
-AZ=$(curl --silent --show-error --fail --max-time 5 \
-  -H "X-aws-ec2-metadata-token: $${TOKEN}" \
-  http://169.254.169.254/latest/meta-data/placement/availability-zone)
-INSTANCE_ID=$(curl --silent --show-error --fail --max-time 5 \
-  -H "X-aws-ec2-metadata-token: $${TOKEN}" \
-  http://169.254.169.254/latest/meta-data/instance-id)
+# ----------------------------------------------- instance metadata (IMDSv2) --
+# Presentation only: never fatal.
+TOKEN=$(curl -s -m 5 -X PUT -H "X-aws-ec2-metadata-token-ttl-seconds: 60" http://169.254.169.254/latest/api/token || true)
+meta() { curl -sf -m 5 -H "X-aws-ec2-metadata-token: $${TOKEN}" "http://169.254.169.254/latest/meta-data/$1" || printf unknown; }
+AZ=$(meta placement/availability-zone)
+INSTANCE_ID=$(meta instance-id)
 printf '%s' "$${AZ}" > /var/lib/app/az.txt
 printf '%s' "$${INSTANCE_ID}" > /var/lib/app/instance-id.txt
+log "Instance $${INSTANCE_ID} in $${AZ}"
 
-# Terraform embeds only the application source and pinned dependency list.
-printf '%s' '${app_py_b64}' | base64 --decode > "$APP_DIR/app.py"
-printf '%s' '${requirements_b64}' | base64 --decode > "$APP_DIR/requirements.txt"
-python3 -m venv "$APP_DIR/venv"
-"$APP_DIR/venv/bin/python" -m pip install --no-cache-dir --requirement "$APP_DIR/requirements.txt"
+# --------------------------------------------------------- application code --
+# Source embedded by Terraform (no secrets): no repository or artifact bucket needed.
+%{ for name, content in app_files ~}
+mkdir -p "$APP_DIR/$(dirname '${name}')"
+cat > "$APP_DIR/${name}" <<'__ECOMM_APP_FILE__'
+${content}
+__ECOMM_APP_FILE__
+%{ endfor ~}
 
-# Fail bootstrap before the instance can be considered ready if Python syntax,
-# Flask import, or the health endpoint is broken.
-"$APP_DIR/venv/bin/python" -m py_compile "$APP_DIR/app.py"
-PYTHONPATH="$APP_DIR" "$APP_DIR/venv/bin/python" - <<'PYAPP'
+retry 3 10 python3.11 -m venv "$APP_DIR/venv"
+retry 5 10 "$APP_DIR/venv/bin/pip" install --no-cache-dir --disable-pip-version-check -r "$APP_DIR/requirements.txt"
+
+# Public RDS CA bundle (certificate + host-name verification). Failure keeps /health green but /ready red.
+mkdir -p "$APP_DIR/certs"
+if retry 5 5 curl --silent --show-error --fail --max-time 30 \
+     -o "$APP_DIR/certs/rds-global-bundle.pem" \
+     https://truststore.pki.rds.amazonaws.com/global/global-bundle.pem \
+   && grep -q 'BEGIN CERTIFICATE' "$APP_DIR/certs/rds-global-bundle.pem"; then
+  log "RDS CA bundle installed"
+else
+  log "ERROR: RDS CA bundle download failed; database connections will be refused until fixed"
+fi
+
+# Non-secret config only: the password is read from Secrets Manager at runtime.
+cat > /etc/ecomm-app/app.env <<'APPENV'
+DB_HOST=${db_host}
+DB_PORT=${db_port}
+DB_NAME=${db_name}
+DB_SECRET_ARN=${db_secret_arn}
+AWS_REGION=${aws_region}
+AWS_DEFAULT_REGION=${aws_region}
+DB_SSL_CA=/opt/ecomm-app/certs/rds-global-bundle.pem
+LOG_LEVEL=INFO
+APPENV
+chown root:"$APP_USER" /etc/ecomm-app/app.env
+chmod 0640 /etc/ecomm-app/app.env
+
+# Code stays root-owned; the service account can read but not modify it.
+chown -R root:root "$APP_DIR"
+chmod -R go-w "$APP_DIR"
+chmod 755 "$APP_DIR"
+chown -R "$APP_USER":"$APP_USER" /var/lib/app
+
+# Self-test before starting (would have caught the Python 3.9 `str | Path` incident); no database needed.
+(cd "$APP_DIR" && env -u DB_HOST "$APP_DIR/venv/bin/python" - <<'SELFTEST'
 from app import app
 client = app.test_client()
 health = client.get("/health")
-assert health.status_code == 200, f"/health returned {health.status_code}"
-assert health.get_data(as_text=True) == "OK", "Unexpected /health response body"
-home = client.get("/")
-assert home.status_code == 200, f"/ returned {home.status_code}"
-PYAPP
+assert health.status_code == 200 and health.get_data(as_text=True) == "OK", health.status_code
+assert client.get("/").status_code == 200, "home page failed to render"
+print("application self-test passed")
+SELFTEST
+)
 
-# Use a dedicated non-login account. Application code and its virtualenv stay
-# root-owned/read-only to the service user; only metadata is owned by the app.
-id ecomm-app >/dev/null 2>&1 || useradd --system --home-dir "$APP_DIR" --shell /sbin/nologin ecomm-app
-chown -R root:root "$APP_DIR"
-chmod -R go-w "$APP_DIR"
-chown -R ecomm-app:ecomm-app /var/lib/app
-chmod 755 "$APP_DIR"
-=======
-# The application supports the Amazon Linux 2023 Python 3.9 runtime.
-PYTHON_BIN=/usr/bin/python3
-"$PYTHON_BIN" --version | tee -a /var/log/ecomm-bootstrap.log
-"$PYTHON_BIN" -c 'import sys; assert sys.version_info >= (3, 9), sys.version'
-
-# IMDSv2 metadata is optional presentation data; failure must not prevent the
-# application from starting or make the ALB report a false outage.
-read_metadata() {
-  local token value
-  token=$(curl --silent --fail --max-time 5 -X PUT \
-    -H "X-aws-ec2-metadata-token-ttl-seconds: 60" \
-    http://169.254.169.254/latest/api/token) || return 1
-  value=$(curl --silent --fail --max-time 5 \
-    -H "X-aws-ec2-metadata-token: $${token}" "$1") || return 1
-  printf '%s' "$${value}"
-}
-
-AZ=unknown
-INSTANCE_ID=unknown
-if AZ=$(retry 3 2 read_metadata http://169.254.169.254/latest/meta-data/placement/availability-zone); then
-  :
-else
-  log "Availability-zone metadata unavailable; using fallback"
-  AZ=unknown
-fi
-if INSTANCE_ID=$(retry 3 2 read_metadata http://169.254.169.254/latest/meta-data/instance-id); then
-  :
-else
-  log "Instance-id metadata unavailable; using fallback"
-  INSTANCE_ID=unknown
-fi
-echo -n "$${AZ}" > /var/lib/app/az.txt
-echo -n "$${INSTANCE_ID}" > /var/lib/app/instance-id.txt
-
-# Terraform embeds application source and public dependency pins, not secrets.
-echo '${app_py_b64}' | base64 -d > "$APP_DIR/app.py"
-echo '${requirements_b64}' | base64 -d > "$APP_DIR/requirements.txt"
-retry 3 10 "$PYTHON_BIN" -m venv "$APP_DIR/venv"
-retry 5 10 "$APP_DIR/venv/bin/pip" install --no-cache-dir -r "$APP_DIR/requirements.txt"
-
-id ecomm-app &>/dev/null || useradd --system --home-dir "$APP_DIR" --shell /sbin/nologin ecomm-app
-chown -R ecomm-app:ecomm-app "$APP_DIR" /var/lib/app
->>>>>>> 71250862fd348fd167e0e034b6f505b43e8e9250
-
+# ------------------------------------------------------------ systemd service --
 cat > /etc/systemd/system/ecomm-app.service <<'SERVICE'
 [Unit]
-Description=E-commerce Flask application
+Description=Nimbus Store Flask application (Gunicorn)
 After=network-online.target
 Wants=network-online.target
 StartLimitIntervalSec=300
@@ -141,8 +124,9 @@ Type=simple
 User=ecomm-app
 Group=ecomm-app
 WorkingDirectory=/opt/ecomm-app
+EnvironmentFile=/etc/ecomm-app/app.env
 Environment=PYTHONUNBUFFERED=1
-ExecStart=/opt/ecomm-app/venv/bin/gunicorn --workers 2 --bind 127.0.0.1:8000 --access-logfile - --error-logfile - app:app
+ExecStart=/opt/ecomm-app/venv/bin/gunicorn --workers 2 --threads 4 --timeout 30 --graceful-timeout 20 --max-requests 1000 --max-requests-jitter 100 --bind 127.0.0.1:8000 --access-logfile - --error-logfile - app:app
 ExecStartPost=/bin/bash -c 'for i in {1..20}; do /usr/bin/curl --fail --silent http://127.0.0.1:8000/health >/dev/null && exit 0; sleep 1; done; echo "Application health check timed out" >&2; exit 1'
 Restart=on-failure
 RestartSec=5
@@ -150,69 +134,74 @@ NoNewPrivileges=true
 PrivateTmp=true
 ProtectSystem=strict
 ProtectHome=true
-PrivateDevices=true
-ProtectKernelTunables=true
-ProtectKernelModules=true
-ProtectControlGroups=true
-RestrictSUIDSGID=true
-LockPersonality=true
 
 [Install]
 WantedBy=multi-user.target
 SERVICE
 
-cat > /etc/nginx/conf.d/ecomm-app.conf <<'NGINX'
-server {
-    listen 80 default_server;
-    server_name _;
+# --------------------------------------------------------------------- nginx --
+# Complete nginx.conf: exactly one server block (no default-vhost conflict).
+cat > /etc/nginx/nginx.conf <<'NGINX'
+user nginx;
+worker_processes auto;
+error_log /var/log/nginx/error.log warn;
+pid /run/nginx.pid;
 
-    location / {
-        proxy_pass http://127.0.0.1:8000;
-        proxy_http_version 1.1;
-        proxy_set_header Host $host;
-        proxy_set_header X-Real-IP $remote_addr;
-        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
-        proxy_set_header X-Forwarded-Proto $scheme;
-        proxy_connect_timeout 3s;
-        proxy_read_timeout 30s;
+events {
+    worker_connections 1024;
+}
+
+http {
+    include /etc/nginx/mime.types;
+    default_type application/octet-stream;
+    server_tokens off;
+    sendfile on;
+    keepalive_timeout 65;
+    client_max_body_size 64k;
+
+    access_log /var/log/nginx/access.log;
+
+    gzip on;
+
+    map $http_x_forwarded_proto $forwarded_proto {
+        default $http_x_forwarded_proto;
+        ""      $scheme;
+    }
+
+    server {
+        listen 80 default_server;
+        server_name _;
+
+        location / {
+            proxy_pass http://127.0.0.1:8000;
+            proxy_http_version 1.1;
+            proxy_set_header Host $host;
+            proxy_set_header X-Real-IP $remote_addr;
+            proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+            proxy_set_header X-Forwarded-Proto $forwarded_proto;
+            proxy_connect_timeout 3s;
+            proxy_read_timeout 30s;
+        }
     }
 }
 NGINX
 
-# Amazon Linux's package may provide a competing default virtual host.
-rm -f /etc/nginx/conf.d/default.conf
-NGINX_TEST_OUTPUT=$(nginx -t 2>&1) || {
-  printf '%s\n' "$${NGINX_TEST_OUTPUT}" >&2
-  exit 1
-}
-printf '%s\n' "$${NGINX_TEST_OUTPUT}"
-if printf '%s\n' "$${NGINX_TEST_OUTPUT}" | grep -qi 'conflicting server name'; then
-  echo "Nginx has conflicting server_name declarations; refusing to start." >&2
-  exit 1
-fi
+nginx -t
+
 systemctl daemon-reload
 systemctl enable ecomm-app nginx
 systemctl restart ecomm-app
 systemctl restart nginx
 
-<<<<<<< HEAD
-# Final end-to-end local checks before cloud-init completes.
-for attempt in {1..20}; do
-  if curl --fail --silent --show-error http://127.0.0.1:8000/health >/dev/null \
-    && curl --fail --silent --show-error http://127.0.0.1/health >/dev/null; then
-    echo "Application and Nginx health checks passed."
-    exit 0
-  fi
-  sleep 2
-done
-
-echo "Application failed post-start health checks; inspect systemd and bootstrap logs." >&2
-systemctl --no-pager --full status ecomm-app nginx || true
-journalctl -u ecomm-app -n 100 --no-pager || true
-exit 1
-=======
-# Do not finish bootstrap until the local application can actually serve the
-# same endpoint used by the ALB target-group health check.
+# ------------------------------------------------------------ final checks --
+# Done only when the ALB health path works end to end (bounded: 12 x 5 s).
 retry 12 5 curl --silent --fail --max-time 5 http://127.0.0.1/health >/dev/null
-log "Bootstrap completed; local /health returned HTTP 200"
->>>>>>> 71250862fd348fd167e0e034b6f505b43e8e9250
+log "Local /health returned HTTP 200 through Nginx"
+
+# Database readiness is reported, never fatal (the ALB check is independent of RDS).
+if curl --silent --fail --max-time 10 http://127.0.0.1/ready >/dev/null; then
+  log "Database readiness check passed"
+else
+  log "WARNING: database not ready yet (IAM, secret, security group or TLS bundle?). Run: curl -s http://127.0.0.1/ready ; journalctl -u ecomm-app -n 50"
+fi
+log "Bootstrap completed"

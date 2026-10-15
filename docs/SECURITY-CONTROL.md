@@ -60,11 +60,7 @@ There is no SSH inbound rule anywhere in this architecture. EC2 instances are ac
 - Logs all session activity to CloudTrail
 - Works from the AWS Console or the AWS CLI (`aws ssm start-session`)
 
-<<<<<<< HEAD
-The Terraform-managed EC2 IAM role uses the AWS-managed `AmazonSSMManagedInstanceCore` policy for Session Manager. The current sample app does not query RDS, so its instance role does not receive Secrets Manager access and no unused database master credential is copied to the host. If a database-backed feature is added, use a dedicated least-privilege database user and scope secret access to the exact secret ARN.
-=======
-The EC2 IAM role has the AWS-managed `AmazonSSMManagedInstanceCore` policy for Session Manager and no application secret-read permission. The current sample app does not consume RDS credentials; adding database-backed behavior later requires a separately reviewed, exact-ARN Secrets Manager policy.
->>>>>>> 71250862fd348fd167e0e034b6f505b43e8e9250
+The EC2 instance role has `AmazonSSMManagedInstanceCore` (Session Manager) plus one inline policy that allows `secretsmanager:GetSecretValue` / `DescribeSecret` on the exact ARN of the RDS-managed master secret and nothing else. The application reads the password at runtime and re-reads it after a rotation; the password is never written to disk, user-data, Terraform variables or Git. Limitation: the app uses the master user (see `DECISIONS.md`).
 
 ### IMDSv2 enforcement
 
@@ -141,11 +137,7 @@ The CPU alarm at 70% for 5 minutes serves both an operational and a light securi
 
 | Principal | Permissions | Reason |
 |---|---|---|
-<<<<<<< HEAD
-| EC2 instance role | `AmazonSSMManagedInstanceCore` | Session Manager; no unused RDS master credential is delivered to the sample app host |
-=======
-| EC2 instance role | `AmazonSSMManagedInstanceCore` only | Session Manager administration; the sample app has no database credential consumer |
->>>>>>> 71250862fd348fd167e0e034b6f505b43e8e9250
+| EC2 instance role | `AmazonSSMManagedInstanceCore` + `secretsmanager:GetSecretValue` on one secret ARN | Session Manager, and runtime read of the RDS-managed credential only |
 | CloudTrail | `s3:PutObject` to the audit bucket only | CloudTrail only needs to write logs |
 | VPC Flow Logs | `logs:CreateLogGroup`, `logs:CreateLogDelivery`, `logs:PutLogEvents` | Minimum to deliver flow logs |
 

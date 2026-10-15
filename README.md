@@ -32,22 +32,14 @@ The project deliberately preserves the initial architecture diagram created duri
 
 ![Current Terraform-aligned Architecture](architecture/architecture-diagram.png)
 
-<<<<<<< HEAD
-*Current reference view. It reflects the Terraform design, including SSM-only instance management, private application/database tiers, SSE-KMS audit storage, observability paths, and the distinction between production-inspired design intent and deployed evidence.*
-=======
-*Current reference view. It reflects the documented Terraform design, including SSM-only instance administration, SSE-KMS audit storage, observability paths, and the distinction between production-inspired design intent and deployed evidence.*
->>>>>>> 71250862fd348fd167e0e034b6f505b43e8e9250
+*Current reference view of the Terraform design: private application and database tiers, SSM-only administration, a database-backed application that reads its credential from Secrets Manager at runtime, SSE-KMS audit storage and the observability paths. It is a design view, not proof of a deployment.*
 
 ### What changed between the two views?
 
 | Area | Initial design | Current documented/Terraform-aligned view |
 |---|---|---|
 | Provenance | Design created for the manual AWS build | Initial artifact preserved; Terraform-aligned view added for implementation clarity |
-<<<<<<< HEAD
-| EC2 IAM role | `AmazonSSMManagedInstanceCore` was shown | `AmazonSSMManagedInstanceCore` only; unused RDS master-secret access is not granted to the sample app |
-=======
-| EC2 IAM role | `AmazonSSMManagedInstanceCore` was shown | SSM-only access; the sample app does not consume RDS credentials |
->>>>>>> 71250862fd348fd167e0e034b6f505b43e8e9250
+| EC2 IAM role | `AmazonSSMManagedInstanceCore` was shown | SSM **plus** read access to exactly one Secrets Manager secret (the RDS-managed master credential) |
 | Audit storage | S3 and CloudTrail were shown | S3 audit storage is documented as private and SSE-KMS encrypted |
 | Evidence | Manual build and validation screenshots | Manual evidence is explicitly separated from Terraform validation evidence |
 | Scaling claim | Auto Scaling Group was shown | Dynamic CPU scaling must be backed by an actual Terraform policy and a recorded load test |
@@ -56,6 +48,40 @@ The project deliberately preserves the initial architecture diagram created duri
 The initial diagram is retained as a historical design artifact; it is not presented as a literal one-to-one rendering of every current Terraform resource. The current diagram is the implementation reference.
 
 ---
+
+## The Application: Nimbus Store
+
+A small, responsive storefront that makes the database tier real. Every number on the page comes from RDS.
+
+![Nimbus Store home page](screenshots/app-home.png)
+
+| Route | Purpose |
+|---|---|
+| `/` | Product catalogue read from RDS (category filter, search) |
+| `POST /api/orders` | Safe write: validated JSON order stored in RDS, tagged with the serving instance and AZ |
+| `/status` | Platform status: serving instance/AZ, database state, latency, row counts, recent orders |
+| `/health` | ALB health check. **Never touches the database**, so an RDS outage cannot cascade into the ASG replacing healthy instances |
+| `/ready` | Readiness incl. a database round-trip (`503` when RDS is unreachable) |
+
+How the database integration works (`terraform/modules/compute/app-src/db.py`):
+
+- Credentials come from Secrets Manager at runtime (`DB_SECRET_ARN`); the password is never written to disk, user-data, Terraform variables or Git.
+- Parameterized PyMySQL queries only; bounded connect/read timeouts, at most 3 Secrets Manager client attempts and one refresh-and-retry on login failure; errors are mapped to generic messages (no stack traces, hosts or SQL are shown to users).
+- TLS with the public RDS CA bundle and host-name verification.
+- The schema and 10 seed products are created idempotently on first start (`CREATE TABLE IF NOT EXISTS`, `INSERT IGNORE` seed).
+- **Rotation recovery:** on MySQL error 1045 the cached secret is dropped, re-read once and the connection retried, so a rotation does not require a redeploy (covered by an integration test).
+- Known limitation: the app signs in as the RDS master user (the only credential RDS rotates natively). See [`docs/DECISIONS.md`](docs/DECISIONS.md).
+
+<details><summary>More local renders</summary>
+
+| | |
+|---|---|
+| ![Order placed](screenshots/app-order-placed.png) | ![Status page](screenshots/app-status.png) |
+| ![Mobile layout](screenshots/app-mobile.png) | |
+
+</details>
+
+> These four screenshots are **local renders** (the app against a local MariaDB), not captures of a deployed AWS environment.
 
 ## The Problem
 
@@ -88,8 +114,8 @@ A web application needs to stay available while keeping its servers and database
 |---|---|
 | Network | VPC across 2 Availability Zones |
 | Public entry | ALB + AWS WAF |
-| Application | Private EC2, Auto Scaling |
-| Database | Private RDS MySQL, Multi-AZ in prod |
+| Application | Private EC2, Auto Scaling, Nginx → Gunicorn → Flask ("Nimbus Store") |
+| Database | Private RDS MySQL, Multi-AZ in prod; credential in Secrets Manager |
 | Administration | SSM Session Manager — no SSH |
 | Monitoring | CloudWatch + SNS |
 | Auditing | CloudTrail + VPC Flow Logs |
@@ -119,11 +145,7 @@ Internet → ALB-SG (80, and 443 once a certificate exists, from 0.0.0.0/0)
         → RDS-SG (port 3306, from EC2-SG only)
 ```
 
-<<<<<<< HEAD
-Only the ALB accepts public traffic; every rule past it references a security group, never a raw CIDR. The Terraform-managed EC2 role uses `AmazonSSMManagedInstanceCore` for Session Manager and does not receive RDS master credentials because the current sample app does not query the database.
-=======
-Only the ALB accepts public traffic; every rule past it references a security group, never a raw CIDR. The EC2 role uses `AmazonSSMManagedInstanceCore` only; the sample app does not read the RDS master secret.
->>>>>>> 71250862fd348fd167e0e034b6f505b43e8e9250
+Only the ALB accepts public traffic; every rule past it references a security group, never a raw CIDR. The EC2 role has `AmazonSSMManagedInstanceCore` and a read-only policy for **one** secret ARN (the RDS-managed credential). The application reads it at runtime and re-reads it after a rotation.
 
 | Control | Status |
 |---|---|
@@ -131,7 +153,8 @@ Only the ALB accepts public traffic; every rule past it references a security gr
 | RDS private, no internet route | ✅ |
 | No SSH — SSM Session Manager only | ✅ |
 | IMDSv2 enforced, hop limit 1 | ✅ |
-| IAM least privilege (SSM-only application instance role) | ✅ |
+| IAM least privilege (SSM + one secret ARN on the instance role; scoped PassRole on the CI role) | ✅ |
+| Database credential never in Git / user-data / disk; TLS with CA + host-name verification | ✅ |
 | AWS WAF — managed rules + rate limiting | ✅ |
 | RDS encryption at rest, automated backups | ✅ |
 | CloudTrail + VPC Flow Logs | ✅ |
@@ -200,7 +223,7 @@ Full workflow, deletion-protection notes, and troubleshooting: [`terraform/READM
 
 ### Automated Validation
 
-The GitHub Actions workflow in [`.github/workflows/ci.yml`](.github/workflows/ci.yml) runs the Flask tests on Python 3.9 and 3.12, validates Terraform bootstrap/dev/prod configurations without configuring the remote backend, and runs an advisory Checkov scan. It does not authenticate to AWS or apply infrastructure. To run application tests locally, install `requirements-dev.txt` and run `python -m pytest -q`.
+`.github/workflows/ci.yml` (no AWS credentials, never applies anything) runs: `ruff`, the pytest suite on Python 3.11 and 3.12 **including real-database integration tests against a `mysql:8.4` service container**, `terraform fmt`, backend-free `init` + `validate` for bootstrap/dev/prod, a repository-hygiene scan (secrets, state files, conflict markers), `actionlint`, `pip-audit`, and an advisory Checkov scan. Locally: `pip install -r requirements-dev.txt -r terraform/modules/compute/app-src/requirements.txt && python -m pytest -q`.
 
 ## Evidence Boundary
 
@@ -231,7 +254,7 @@ The project is therefore presented as **production-inspired** until a real AWS d
 ![WAF Validation](validation-tests/WAF-XSS-requests-blocked.png)
 
 <details>
-<summary><strong>Screenshots — 16 total, every layer</strong></summary>
+<summary><strong>Screenshots — manual AWS build (every layer)</strong></summary>
 
 | | |
 |---|---|
@@ -242,7 +265,7 @@ The project is therefore presented as **production-inspired** until a real AWS d
 | ![RDS](screenshots/07-rds.png) | ![RDS Failover](screenshots/08-rds-failover.png) |
 | ![CloudWatch Dashboard](screenshots/10-cloudwatch-dashboard.png) | ![CloudWatch Alarm](screenshots/11-cloudwatch-alarm.png) |
 | ![SNS Email](screenshots/12-sns-email.png) | ![CloudTrail](screenshots/14-cloudtrail.png) |
-| ![VPC Flow Logs](screenshots/15-vpc-flowlogs.png) | ![Production App](screenshots/production-app.png) |
+| ![VPC Flow Logs](screenshots/15-vpc-flowlogs.png) | ![Nimbus Store (local render)](screenshots/app-home.png) |
 
 </details>
 
@@ -262,29 +285,39 @@ The project is therefore presented as **production-inspired** until a real AWS d
 | [`docs/LESSONS-LEARNED.md`](docs/LESSONS-LEARNED.md) | Key takeaways from the migration |
 | [`docs/CI-CD.md`](docs/CI-CD.md) | CI checks, optional gated CD, and local commands |
 | [`docs/VERIFICATION-REPORT.md`](docs/VERIFICATION-REPORT.md) | Executed checks, evidence, and limitations |
-| [`docs/CHANGE-SUMMARY.md`](docs/CHANGE-SUMMARY.md) | Delivered changes and manual setup requirements |
+| [`docs/audit-repair-report.md`](docs/audit-repair-report.md) | Root causes, fixes, changed files, remaining risks |
+| [`docs/CV-BULLETS.md`](docs/CV-BULLETS.md) | Résumé bullets backed only by measured results |
 
 ## Cost
 
 Main drivers: RDS, NAT Gateways, ALB, WAF, CloudWatch. `dev` defaults to the cheaper end (1 NAT, single-AZ RDS, `db.t3.micro`); `prod` requires an explicit instance class rather than a silent default. A historical hourly estimate for the initial validated configuration is documented in [`docs/COST-ANALYSIS.md`](docs/COST-ANALYSIS.md) — actual AWS pricing varies by region, usage, and time, so treat any number there as a point-in-time estimate, not current pricing. Destroy environments when not in use; NAT Gateways and RDS bill hourly regardless of traffic.
 
-## CI/CD and Repository Readiness
+## CI/CD and Deployment Workflow
 
-GitHub Actions CI now validates Python, runs the Flask test suite, checks Terraform formatting, initializes each Terraform root with the backend disabled, and validates bootstrap/dev/prod without AWS credentials. A separate `workflow_dispatch` Terraform workflow provides an optional OIDC-based plan/apply path; it never runs on ordinary pushes or pull requests and requires protected GitHub Environment configuration. See [`docs/CI-CD.md`](docs/CI-CD.md) for the exact setup and local commands.
+Deployment is a **manual** `workflow_dispatch` run of [`.github/workflows/terraform-deploy.yml`](.github/workflows/terraform-deploy.yml): OIDC (no stored keys) → plan → human approval via the GitHub Environment → apply of the *saved* plan (no stale plans) → smoke test of `/health` and `/ready`.
+
+- The state key is fixed to `ecomm-platform/<environment>/terraform.tfstate`, the same key as `backend.hcl.example`, so a laptop and CI always use the **same** state. A mismatched key makes Terraform believe nothing exists and re-create everything (`EntityAlreadyExists`, `VpcLimitExceeded`); that was the root cause of the failed run this release fixes.
+- Guards: refuses an **empty** state unless `allow_fresh_state` is ticked; refuses any plan that deletes/replaces resources unless `allow_destroy` is ticked; per-environment concurrency group; `-lock-timeout`.
+- Required Environment variables: `AWS_DEPLOY_ROLE_ARN`, `TF_STATE_BUCKET` (`AWS_REGION` optional, `TF_DB_INSTANCE_CLASS` required for prod, `TF_ALARM_EMAIL` optional).
+- Reference IAM policies: [`docs/iam/`](docs/iam/). Runbooks (including recovering from a wrong state key): [`docs/CI-CD.md`](docs/CI-CD.md).
+
+## Known Limitations
+
+- The workflow and the Terraform stack have **not** been executed against AWS by this repository's author in this release (see Evidence Boundary and [`docs/VERIFICATION-REPORT.md`](docs/VERIFICATION-REPORT.md)).
+- Application signs in as the RDS master user; no dedicated DB user yet.
+- EC2 user-data is limited to 16 KB by AWS; the app is therefore small and embedded gzip-compressed (a test guards the size).
+- Default deployment is HTTP; HTTPS needs an ACM certificate (`certificate_arn`).
+- Checkov reports 41 advisory findings (227 passed), triaged as accepted cost/scope trade-offs (e.g. cross-region S3 replication, ALB access logs, KMS for log groups).
 
 ## Future Improvements
 
-<<<<<<< HEAD
-HTTPS + Route 53 + ACM · GitHub Actions AWS deployment automation (CI validation exists; no automatic apply) · load testing at higher concurrency · ECS/Fargate migration for the application tier.
-=======
-HTTPS + ACM · load testing at higher concurrency · ECS/Fargate migration for the application tier. Route 53 remains intentionally outside this implementation scope.
->>>>>>> 71250862fd348fd167e0e034b6f505b43e8e9250
+HTTPS + ACM · dedicated least-privilege database user with its own rotation · load testing at higher concurrency · ECS/Fargate migration for the application tier. Route 53 remains intentionally outside this implementation scope.
 
 ## Cleanup
 
 ```bash
 cd terraform/environments/dev   # or prod
-terraform destroy
+terraform destroy   # manual, deliberate, never from CI
 ```
 
 `prod` uses RDS deletion protection. To destroy the production environment, disable deletion protection in the production configuration, apply the change, and then run `terraform destroy`. Destroy the `bootstrap` state bucket only after no environment depends on it anymore.

@@ -1,9 +1,11 @@
-<<<<<<< HEAD
+# Development / CI tooling. Runtime dependencies are pinned in
+# terraform/modules/compute/app-src/requirements.txt and included here.
 -r terraform/modules/compute/app-src/requirements.txt
 pytest==8.3.5
-=======
-pytest==8.3.5
+pytest-cov==7.1.0
 ruff==0.9.10
 pip-audit==2.7.3
-PyYAML==6.0.2
->>>>>>> 71250862fd348fd167e0e034b6f505b43e8e9250
+PyYAML==6.0.3
+# Only needed by the MySQL 8.4 integration tests (caching_sha2_password over a
+# non-TLS test connection). Production connections use TLS and do not need it.
+cryptography==46.0.3
