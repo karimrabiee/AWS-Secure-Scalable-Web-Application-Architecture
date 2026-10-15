@@ -58,7 +58,8 @@ Add required reviewers to the `prod` Environment.
 Reference documents: `docs/iam/github-oidc-trust-policy.json` (trust restricted to this repo and the Environment) and `docs/iam/terraform-deploy-policy.json`.
 
 - `iam:PassRole` only for project roles (`ecomm-platform-*`) and only to `ec2.amazonaws.com` / `monitoring.rds.amazonaws.com`.
-- State access limited to `ecomm-platform/<env>/` (+ its `.tflock`).
+- Object access (`GetObject`/`PutObject`) limited to the exact state key and its `.tflock`; `DeleteObject` only on the `.tflock`.
+- `s3:ListBucket` on the state bucket **without** an `s3:prefix` condition. `HeadObject`/`GetObject` carry no prefix context, so a prefix condition turns a missing or readable object into `403 Forbidden` (this was the cause of the `HeadObject 403` seen in the plan job). See `docs/iam/README.md`.
 - The app now creates an inline policy on the EC2 role, so the role also needs `iam:PutRolePolicy`, `iam:GetRolePolicy`, `iam:DeleteRolePolicy`. If `enforce_tls` is used, RDS parameter-group actions (`rds:CreateDBParameterGroup`, `rds:ModifyDBParameterGroup`, `rds:DeleteDBParameterGroup`, `rds:DescribeDBParameterGroups`, `rds:DescribeDBParameters`) are needed too.
 
 ## Local checks
