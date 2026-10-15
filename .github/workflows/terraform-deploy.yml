@@ -1,15 +1,35 @@
 name: Terraform deploy (manual)
 
+# Manual, reviewed deployments only: plan -> (approval) -> apply -> smoke test.
+# Authentication uses GitHub OIDC (no long-lived AWS keys are stored anywhere).
+#
+# STATE KEY - IMPORTANT
+# The state object is always  ecomm-platform/<environment>/terraform.tfstate  in the
+# bucket given by the TF_STATE_BUCKET variable. This is the same key used by
+# environments/<env>/backend.hcl.example, so a laptop and CI always operate on the
+# SAME state. (A different key makes Terraform believe nothing exists and try to
+# re-create every resource: EntityAlreadyExists / VpcLimitExceeded errors.)
+
 on:
   workflow_dispatch:
     inputs:
       environment:
-        description: Terraform environment to plan/apply
+        description: Terraform environment
         required: true
         type: choice
         options: [dev, prod]
       apply:
-        description: Apply the reviewed plan (requires environment approval)
+        description: Apply the reviewed plan (needs environment approval)
+        required: true
+        type: boolean
+        default: false
+      allow_fresh_state:
+        description: "First deployment only: allow planning against an EMPTY state"
+        required: true
+        type: boolean
+        default: false
+      allow_destroy:
+        description: Allow a plan that deletes or replaces resources
         required: true
         type: boolean
         default: false
@@ -22,102 +42,182 @@ concurrency:
   group: terraform-${{ inputs.environment }}
   cancel-in-progress: false
 
+env:
+  TF_VERSION: "1.10.5"
+  TF_IN_AUTOMATION: "true"
+  TF_INPUT: "false"
+  STATE_KEY: ecomm-platform/${{ inputs.environment }}/terraform.tfstate
+  TF_DIR: terraform/environments/${{ inputs.environment }}
+
 jobs:
   plan:
-    name: Plan ${{ inputs.environment }}
+    name: Plan (${{ inputs.environment }})
     runs-on: ubuntu-22.04
+    timeout-minutes: 30
     environment: ${{ inputs.environment }}
     env:
-      TF_IN_AUTOMATION: 'true'
-      TF_INPUT: 'false'
       DEPLOY_DB_INSTANCE_CLASS: ${{ vars.TF_DB_INSTANCE_CLASS }}
       DEPLOY_ALARM_EMAIL: ${{ vars.TF_ALARM_EMAIL }}
+      TF_STATE_BUCKET: ${{ vars.TF_STATE_BUCKET }}
+      AWS_REGION_NAME: ${{ vars.AWS_REGION || 'us-east-1' }}
     steps:
       - uses: actions/checkout@v4
 
       - uses: hashicorp/setup-terraform@v3
         with:
-          terraform_version: '1.10.5'
+          terraform_version: ${{ env.TF_VERSION }}
+          terraform_wrapper: false
 
-      - name: Configure AWS credentials with OIDC
+      - name: Configure AWS credentials (OIDC)
         uses: aws-actions/configure-aws-credentials@v4
         with:
           role-to-assume: ${{ vars.AWS_DEPLOY_ROLE_ARN }}
-          aws-region: ${{ vars.AWS_REGION || 'us-east-1' }}
+          aws-region: ${{ env.AWS_REGION_NAME }}
           audience: sts.amazonaws.com
 
       - name: Verify AWS identity
-        run: aws sts get-caller-identity
+        run: |
+          # The 12-digit account id is masked so it does not appear in public logs.
+          aws sts get-caller-identity --query Arn --output text | sed -E 's/[0-9]{12}/************/g'
+
+      - name: Require backend configuration
+        run: |
+          test -n "$TF_STATE_BUCKET" || { echo "::error::Repository/Environment variable TF_STATE_BUCKET is not set"; exit 1; }
 
       - name: Terraform init
-        working-directory: terraform/environments/${{ inputs.environment }}
-        run: terraform init -input=false -backend-config="bucket=${{ vars.TF_STATE_BUCKET }}" -backend-config="key=${{ vars.TF_STATE_KEY_PREFIX }}/${{ inputs.environment }}.tfstate" -backend-config="region=${{ vars.AWS_REGION || 'us-east-1' }}"
+        working-directory: ${{ env.TF_DIR }}
+        run: |
+          terraform init -input=false \
+            -backend-config="bucket=${TF_STATE_BUCKET}" \
+            -backend-config="key=${STATE_KEY}" \
+            -backend-config="region=${AWS_REGION_NAME}"
+
+      - name: Guard - state must not be empty
+        working-directory: ${{ env.TF_DIR }}
+        env:
+          ALLOW_FRESH_STATE: ${{ inputs.allow_fresh_state }}
+        run: |
+          COUNT=$(terraform state list | wc -l)
+          echo "Resources tracked in state ${STATE_KEY}: ${COUNT}"
+          if [ "$COUNT" -eq 0 ] && [ "$ALLOW_FRESH_STATE" != "true" ]; then
+            echo "::error::The state is EMPTY. Applying now would try to re-create resources that may already exist (EntityAlreadyExists / VpcLimitExceeded)."
+            echo "::error::Check that '${STATE_KEY}' is the state used for the existing infrastructure (see docs/CI-CD.md, 'Recovering from a wrong state key'). For a genuinely first deployment re-run with allow_fresh_state=true."
+            exit 1
+          fi
 
       - name: Terraform validate
-        working-directory: terraform/environments/${{ inputs.environment }}
+        working-directory: ${{ env.TF_DIR }}
         run: terraform validate -no-color
 
       - name: Terraform plan
-        working-directory: terraform/environments/${{ inputs.environment }}
+        working-directory: ${{ env.TF_DIR }}
         run: |
           if [ "${{ inputs.environment }}" = "prod" ]; then
-            test -n "$DEPLOY_DB_INSTANCE_CLASS" || {
-              echo "TF_DB_INSTANCE_CLASS is required for prod" >&2
-              exit 1
-            }
+            test -n "$DEPLOY_DB_INSTANCE_CLASS" || { echo "::error::TF_DB_INSTANCE_CLASS is required for prod"; exit 1; }
             export TF_VAR_db_instance_class="$DEPLOY_DB_INSTANCE_CLASS"
           fi
           if [ -n "$DEPLOY_ALARM_EMAIL" ]; then
             export TF_VAR_alarm_email="$DEPLOY_ALARM_EMAIL"
           fi
-          terraform plan -input=false -out=tfplan
+          terraform plan -input=false -lock-timeout=300s -out=tfplan
+
+      - name: Summarise plan and apply safety checks
+        working-directory: ${{ env.TF_DIR }}
+        env:
+          ALLOW_DESTROY: ${{ inputs.allow_destroy }}
+        run: |
+          # The JSON is only used for counting; it is never uploaded or printed.
+          terraform show -json tfplan > "${RUNNER_TEMP}/plan.json"
+          ADD=$(jq '[.resource_changes[] | select(.change.actions == ["create"])] | length' "${RUNNER_TEMP}/plan.json")
+          CHANGE=$(jq '[.resource_changes[] | select(.change.actions == ["update"])] | length' "${RUNNER_TEMP}/plan.json")
+          DESTROY=$(jq '[.resource_changes[] | select(.change.actions | index("delete"))] | length' "${RUNNER_TEMP}/plan.json")
+          {
+            echo "### Terraform plan - ${{ inputs.environment }}"
+            echo ""
+            echo "| Add | Change | Destroy / replace |"
+            echo "|---|---|---|"
+            echo "| ${ADD} | ${CHANGE} | ${DESTROY} |"
+            if [ "$DESTROY" -gt 0 ]; then
+              echo ""
+              echo "Resources to be deleted or replaced:"
+              jq -r '.resource_changes[] | select(.change.actions | index("delete")) | "- `" + .address + "` (" + (.change.actions | join("+")) + ")"' "${RUNNER_TEMP}/plan.json"
+            fi
+          } >> "$GITHUB_STEP_SUMMARY"
+          if [ "$DESTROY" -gt 0 ] && [ "$ALLOW_DESTROY" != "true" ]; then
+            echo "::error::The plan deletes or replaces ${DESTROY} resource(s). Review the summary; re-run with allow_destroy=true only if this is intended."
+            exit 1
+          fi
 
       - uses: actions/upload-artifact@v4
         with:
           name: terraform-plan-${{ inputs.environment }}
-          path: terraform/environments/${{ inputs.environment }}/tfplan
+          path: ${{ env.TF_DIR }}/tfplan
           retention-days: 5
+          if-no-files-found: error
 
   apply:
-    name: Apply ${{ inputs.environment }}
-    if: ${{ inputs.apply == true }}
+    name: Apply (${{ inputs.environment }})
+    if: ${{ inputs.apply }}
     needs: plan
     runs-on: ubuntu-22.04
+    timeout-minutes: 60
     environment: ${{ inputs.environment }}
-    permissions:
-      contents: read
-      id-token: write
     env:
-      TF_IN_AUTOMATION: 'true'
-      TF_INPUT: 'false'
-      DEPLOY_DB_INSTANCE_CLASS: ${{ vars.TF_DB_INSTANCE_CLASS }}
-      DEPLOY_ALARM_EMAIL: ${{ vars.TF_ALARM_EMAIL }}
+      TF_STATE_BUCKET: ${{ vars.TF_STATE_BUCKET }}
+      AWS_REGION_NAME: ${{ vars.AWS_REGION || 'us-east-1' }}
     steps:
       - uses: actions/checkout@v4
 
       - uses: hashicorp/setup-terraform@v3
         with:
-          terraform_version: '1.10.5'
+          terraform_version: ${{ env.TF_VERSION }}
+          terraform_wrapper: false
 
-      - name: Configure AWS credentials with OIDC
+      - name: Configure AWS credentials (OIDC)
         uses: aws-actions/configure-aws-credentials@v4
         with:
           role-to-assume: ${{ vars.AWS_DEPLOY_ROLE_ARN }}
-          aws-region: ${{ vars.AWS_REGION || 'us-east-1' }}
+          aws-region: ${{ env.AWS_REGION_NAME }}
           audience: sts.amazonaws.com
-
-      - name: Verify AWS identity
-        run: aws sts get-caller-identity
 
       - uses: actions/download-artifact@v4
         with:
           name: terraform-plan-${{ inputs.environment }}
-          path: terraform/environments/${{ inputs.environment }}
+          path: ${{ env.TF_DIR }}
 
       - name: Terraform init
-        working-directory: terraform/environments/${{ inputs.environment }}
-        run: terraform init -input=false -backend-config="bucket=${{ vars.TF_STATE_BUCKET }}" -backend-config="key=${{ vars.TF_STATE_KEY_PREFIX }}/${{ inputs.environment }}.tfstate" -backend-config="region=${{ vars.AWS_REGION || 'us-east-1' }}"
+        working-directory: ${{ env.TF_DIR }}
+        run: |
+          terraform init -input=false \
+            -backend-config="bucket=${TF_STATE_BUCKET}" \
+            -backend-config="key=${STATE_KEY}" \
+            -backend-config="region=${AWS_REGION_NAME}"
 
-      - name: Apply reviewed plan
-        working-directory: terraform/environments/${{ inputs.environment }}
-        run: terraform apply -input=false tfplan
+      - name: Apply the reviewed plan
+        working-directory: ${{ env.TF_DIR }}
+        run: terraform apply -input=false -lock-timeout=300s tfplan
+
+      - name: Smoke test through the load balancer
+        working-directory: ${{ env.TF_DIR }}
+        run: |
+          # An apply can finish before new instances have bootstrapped, so poll
+          # (bounded: 30 x 20 s = 10 min) until BOTH probes succeed:
+          #   /health -> web + app tier through WAF/ALB/Nginx/Gunicorn
+          #   /ready  -> database tier (RDS + Secrets Manager + TLS)
+          ALB=$(terraform output -raw alb_dns_name)
+          for i in $(seq 1 30); do
+            H=$(curl -s -o /dev/null -m 10 -w '%{http_code}' "http://${ALB}/health" || true)
+            R=$(curl -s -o /dev/null -m 10 -w '%{http_code}' "http://${ALB}/ready" || true)
+            echo "attempt ${i}: /health=${H} /ready=${R}"
+            if [ "$H" = "200" ] && [ "$R" = "200" ]; then
+              {
+                echo "### Smoke test passed"
+                echo ""
+                echo "- \`/health\` and \`/ready\` returned HTTP 200 via the ALB (attempt ${i})"
+              } >> "$GITHUB_STEP_SUMMARY"
+              exit 0
+            fi
+            sleep 20
+          done
+          echo "::error::Smoke test failed: see docs/TROUBLESHOOTING.md (target health, SSM, journalctl -u ecomm-app)"
+          exit 1

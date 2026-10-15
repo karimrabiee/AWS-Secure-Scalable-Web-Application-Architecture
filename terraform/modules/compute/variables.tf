@@ -73,6 +73,33 @@ variable "cpu_target_percentage" {
   }
 }
 
+variable "db_address" {
+  description = "RDS endpoint host name (no port) the application connects to."
+  type        = string
+}
+
+variable "db_port" {
+  description = "RDS port."
+  type        = number
+  default     = 3306
+}
+
+variable "db_name" {
+  description = "Database (schema) name used by the application."
+  type        = string
+}
+
+variable "db_secret_arn" {
+  description = "ARN of the Secrets Manager secret holding the RDS-managed master credentials. The instance role is granted read access to this single secret."
+  type        = string
+}
+
+variable "health_check_grace_period" {
+  description = "Seconds the ASG waits before evaluating ELB health of a new instance (bootstrap installs packages and dependencies)."
+  type        = number
+  default     = 600
+}
+
 variable "enable_instance_refresh" {
   description = "Roll instances automatically when the launch template changes (AMI update, user-data change) instead of manual replacement."
   type        = bool

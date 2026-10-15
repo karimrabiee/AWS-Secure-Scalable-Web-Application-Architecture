@@ -1,74 +1,78 @@
-# CI/CD and Repository Readiness
+# CI/CD
 
-This repository uses a deliberately small separation between **CI validation** and **CD deployment**.
+Two workflows, deliberately separate:
 
-## Continuous integration
+| Workflow | Trigger | AWS access | Does |
+|---|---|---|---|
+| `ci.yml` | push / PR | none | lint, tests (Python 3.11 + 3.12, real `mysql:8.4` service), Terraform fmt + backend-free validate, hygiene, `actionlint`, `pip-audit`, advisory Checkov |
+| `terraform-deploy.yml` | manual (`workflow_dispatch`) | OIDC role | plan → approval → apply of the saved plan → smoke test |
 
-`.github/workflows/ci.yml` runs on pull requests and pushes to `main`. It does not need AWS credentials and never runs `terraform apply` or `terraform destroy`.
+## Deployment workflow
 
-The workflow checks:
+Inputs: `environment` (dev/prod), `apply`, `allow_fresh_state`, `allow_destroy`.
 
-1. Python dependencies, `ruff check`, syntax compilation, and pytest on Python 3.9 and 3.12; Python 3.9 is included because it matches the supported Amazon Linux runtime.
-2. Terraform formatting for the complete `terraform/` tree.
-3. Backend-free `terraform init` and `terraform validate` for `bootstrap`, `environments/dev`, and `environments/prod`.
-4. A lightweight repository-hygiene scan for common credentials and private keys.
-5. A dependency audit of the application requirements where the package index is available.
+1. **Plan job** – OIDC login, `terraform init` against the fixed backend, guards, `terraform plan -out`, plan summary in the run page, plan uploaded as an artifact.
+2. **Apply job** (only if `apply` is ticked, `needs: plan`) – runs in the GitHub Environment, so *required reviewers* gate it. It applies the **same saved plan** (a stale or different plan is rejected by Terraform), then curls `/health` and `/ready` on the ALB.
 
-The Terraform jobs use `-backend=false`, so CI cannot access or modify the configured S3 state backend.
+Safety properties: per-environment `concurrency` group (no parallel runs), `-lock-timeout=300s`, masked account id in logs, `contents: read` + `id-token: write` only.
 
-## Optional CD
+### State location (the root cause of the failed run)
 
-`.github/workflows/terraform-deploy.yml` is an intentionally gated, manual workflow (`workflow_dispatch`). It is not triggered by ordinary pushes or pull requests.
+```
+bucket: <TF_STATE_BUCKET>            e.g. ecomm-platform-tfstate-<account-id>
+key:    ecomm-platform/<env>/terraform.tfstate
+region: AWS_REGION (default us-east-1)
+```
 
-Before using it, an owner must:
+This is exactly the key in `terraform/environments/<env>/backend.hcl.example`. The earlier workflow used `${TF_STATE_KEY_PREFIX}/<env>.tfstate`, a **different object**. Terraform therefore saw an empty state and tried to create everything that the local state already tracked: `EntityAlreadyExists` (IAM roles), `VpcLimitExceeded`. The variable `TF_STATE_KEY_PREFIX` no longer exists; delete it from the GitHub Environment.
 
-- Configure an AWS IAM OIDC provider for GitHub Actions.
-- Create a dedicated role with least-privilege Terraform permissions and a trust policy restricted to the intended repository and branch/environment.
-- Add `AWS_DEPLOY_ROLE_ARN` as a GitHub **Environment variable**.
-- Add `AWS_REGION`, `TF_STATE_BUCKET`, and `TF_STATE_KEY_PREFIX` as protected
-  GitHub Environment variables. The state bucket must already exist and the
-  key prefix must be unique to this repository.
-- For `prod`, add `TF_DB_INSTANCE_CLASS` because the Terraform variable is
-  deliberately required and has no default. `TF_ALARM_EMAIL` is optional.
-- Configure `dev` or `prod` GitHub Environments to match the workflow input; add required reviewers for `prod`.
-- Do not use a committed `backend.hcl`; the workflow passes the protected
-  backend variables directly to Terraform.
+Guards that stop it recurring:
+- **Empty state** → job fails unless `allow_fresh_state` is ticked (first deployment only).
+- **Deletes/replacements in the plan** → job fails unless `allow_destroy` is ticked.
 
-The workflow performs validation and a plan first. Apply is a separate job, protected by the selected GitHub Environment. OIDC uses the `sts.amazonaws.com` audience, AWS identity is printed for account verification, and a per-environment concurrency lock prevents overlapping Terraform runs. This repository does not claim that the optional workflow has been exercised against a real AWS account.
+### Required GitHub Environment variables
+
+| Variable | Required | Note |
+|---|---|---|
+| `AWS_DEPLOY_ROLE_ARN` | yes | e.g. `arn:aws:iam::<account>:role/GitHubActions-Terraform-Dev` |
+| `TF_STATE_BUCKET` | yes | existing bucket from `terraform/bootstrap` |
+| `AWS_REGION` | no | default `us-east-1` |
+| `TF_DB_INSTANCE_CLASS` | prod only | no default by design |
+| `TF_ALARM_EMAIL` | no | SNS email subscription |
+
+Add required reviewers to the `prod` Environment.
+
+## Recovering from a wrong state key (read-only runbook)
+
+1. List what the bucket really contains (read-only):
+   ```bash
+   scripts/state-inventory.sh <state-bucket> us-east-1
+   ```
+   Look for the object with many resources (normally `ecomm-platform/dev/terraform.tfstate`). A `.tflock` file means a run is active or crashed.
+2. Confirm the same key locally: `terraform -chdir=terraform/environments/dev init -backend-config=backend.hcl && terraform state list | wc -l`.
+3. Run the workflow with `apply` **unticked**; read the plan summary. A healthy plan on an existing stack is small (mostly updates/no-ops).
+4. Never delete state, never `terraform import` blindly, never rename resources to dodge `EntityAlreadyExists`. If a crashed run left a lock, confirm nothing is running, then `terraform force-unlock <ID>`.
+
+## IAM for the deploy role
+
+Reference documents: `docs/iam/github-oidc-trust-policy.json` (trust restricted to this repo and the Environment) and `docs/iam/terraform-deploy-policy.json`.
+
+- `iam:PassRole` only for project roles (`ecomm-platform-*`) and only to `ec2.amazonaws.com` / `monitoring.rds.amazonaws.com`.
+- State access limited to `ecomm-platform/<env>/` (+ its `.tflock`).
+- The app now creates an inline policy on the EC2 role, so the role also needs `iam:PutRolePolicy`, `iam:GetRolePolicy`, `iam:DeleteRolePolicy`. If `enforce_tls` is used, RDS parameter-group actions (`rds:CreateDBParameterGroup`, `rds:ModifyDBParameterGroup`, `rds:DeleteDBParameterGroup`, `rds:DescribeDBParameterGroups`, `rds:DescribeDBParameters`) are needed too.
 
 ## Local checks
 
-Linux/macOS/WSL:
-
 ```bash
-python3 -m venv .venv
-. .venv/bin/activate
-python -m pip install -r terraform/modules/compute/app-src/requirements.txt -r requirements-dev.txt
-python -m pytest
-ruff check .
-python -m py_compile terraform/modules/compute/app-src/app.py
-python scripts/check-repository-hygiene.py
-
+python3 -m venv .venv && . .venv/bin/activate
+pip install -r terraform/modules/compute/app-src/requirements.txt -r requirements-dev.txt
+python -m pytest -q                       # DB integration tests skip unless TEST_DB_HOST is set
+TEST_DB_HOST=127.0.0.1 TEST_DB_USER=root python -m pytest -q   # with a local MySQL/MariaDB
+ruff check . && python scripts/check-repository-hygiene.py
 terraform fmt -check -recursive terraform
-for root in terraform/bootstrap terraform/environments/dev terraform/environments/prod; do
-  (cd "$root" && terraform init -backend=false && terraform validate)
-done
+for r in bootstrap environments/dev environments/prod; do (cd terraform/$r && terraform init -backend=false && terraform validate); done
 ```
-
-PowerShell:
-
-```powershell
-py -m venv .venv
-.\.venv\Scripts\Activate.ps1
-python -m pip install -r terraform/modules/compute/app-src/requirements.txt -r requirements-dev.txt
-python -m pytest
-ruff check .
-python scripts/check-repository-hygiene.py
-terraform fmt -check -recursive terraform
-```
-
-The final Terraform validation commands are the same as above, using `Set-Location` for each root.
 
 ## Evidence boundary
 
-Passing local tests proves application behavior and Terraform configuration validity only. It does not prove AWS permissions, resource quotas, provider-side behavior, live failover, cost, or a successful deployment. Those require a separately authorized AWS account test and recorded evidence.
+CI proves code and configuration validity only. It does not prove AWS permissions, quotas, provider behaviour, or a successful deployment; those need an authorised run and recorded evidence.

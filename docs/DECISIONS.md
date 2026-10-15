@@ -16,29 +16,24 @@ The database sits in its own private subnets and is reachable only from the appl
 
 ## 4. A small Flask app instead of PHP
 
-The sample application is a small Flask app in `terraform/modules/compute/app-src/app.py`, served by Gunicorn behind Nginx. It keeps the same two routes (`/`, `/health`) without adding containers or microservices.
+The application ("Nimbus Store") is a small Flask app in `terraform/modules/compute/app-src/`, served by Gunicorn behind Nginx, with a PyMySQL data layer (`db.py`). `/health` is DB-independent (ALB liveness); `/ready` includes the database. It adds no containers, frameworks or microservices.
+
+Constraint: EC2 user-data is capped at 16 KB, and the app source is embedded in it (gzip + base64). The app is therefore deliberately small; `tests/test_infra_contracts.py` fails if the rendered payload approaches the limit. Runtime is Python 3.11 (`python3.11` on Amazon Linux 2023) so that current, patched dependencies install.
 
 ## 5. Secrets and SSM
 
-<<<<<<< HEAD
-RDS generates and manages its master password in AWS Secrets Manager. The
-current sample Flask app only demonstrates the web/application tier and does
-not query RDS. Therefore, the EC2 instance role intentionally has
-`AmazonSSMManagedInstanceCore` only; it does not retrieve or store an unused
-RDS credential. This avoids placing a master credential on an application
-host that has no database feature. If database-backed application behavior is
-added later, introduce a dedicated least-privilege database user, grant access
-to only the required secret, and test connection handling before deployment.
-No password is stored in Git, Terraform variables, or user-data source code.
-=======
-RDS still manages its master password in AWS Secrets Manager, but the current
-sample application has no database client, query, or route. The EC2 bootstrap
-therefore does not fetch or write the unused RDS secret, and the instance role
-uses the AWS-managed SSM policy only. If database-backed application behavior
-is added later, it must introduce an explicit client, tests, and a narrowly
-scoped secret-read policy as a separate reviewed change. No password exists in
-Git, Terraform variables, or user-data source code.
->>>>>>> 71250862fd348fd167e0e034b6f505b43e8e9250
+RDS generates and manages its master password in AWS Secrets Manager
+(`manage_master_user_password`). The Nimbus Store application reads that
+secret at runtime with `secretsmanager:GetSecretValue` scoped to the single
+secret ARN, and re-reads it when MySQL rejects the cached password (error
+1045), so a rotation never needs a redeploy. No password is stored in Git,
+Terraform variables, user-data or the instance filesystem.
+
+Known limitation: the app signs in as the RDS *master* user, because that is
+the only credential RDS manages and rotates for free. A dedicated
+least-privilege database user with its own rotated secret is the next
+hardening step and is deliberately out of scope here (it would need a
+rotation Lambda, i.e. extra services).
 
 ## 6. AMI auto-discovery, with an explicit-pin option
 
@@ -72,11 +67,7 @@ The original environment was built by hand through the Console. When Terraform i
 
 ## 11. Services kept out of scope
 
-<<<<<<< HEAD
-No domain, Route 53, or ACM certificate is required today. No CloudFront, Kubernetes, ECS, automatic AWS deployment pipeline, or multi-region setup. A GitHub Actions CI workflow runs local tests, Terraform validation, and an advisory security scan; it does not apply infrastructure. These boundaries keep cost and complexity down for this portfolio project.
-=======
-No domain, Route 53, or ACM certificate is required today. No CloudFront, Kubernetes, ECS, or multi-region setup is included. These are deliberate choices to keep the AWS architecture cost and complexity down. The repository now has lightweight CI validation and an optional manually triggered OIDC deployment workflow; this automation does not add another runtime AWS service.
->>>>>>> 71250862fd348fd167e0e034b6f505b43e8e9250
+No domain, Route 53, or ACM certificate is required today. No CloudFront, Kubernetes, ECS, or multi-region setup. The manual `workflow_dispatch` deployment workflow (OIDC, plan, approval, apply) adds no runtime AWS service. These boundaries keep cost and complexity down for this portfolio project.
 
 ## 12. One NAT Gateway per AZ in production
 
@@ -86,12 +77,6 @@ A single NAT Gateway shared by both AZs would make instances in one AZ depend on
 
 The WAF rate-based rule blocks an IP after it crosses `waf_rate_limit_per_5min` requests, evaluated over a rolling five-minute window. This is a coarse defense against floods and scanners — it is not a precise per-second rate limiter, and it is not a substitute for a CDN or a dedicated bot-management service.
 
-<<<<<<< HEAD
-## 14. IAM scope on the state bucket, and no AWS deployment role yet
+## 14. IAM scope on the state bucket and the CI/CD role
 
-The bootstrap state bucket currently denies insecure (non-HTTPS) access; it is not yet scoped to a specific operator role or AWS deployment identity. The GitHub Actions workflow added for this repository performs tests and static validation only: it has no AWS credentials, OIDC trust, or permission to apply infrastructure. If AWS deployment automation is introduced later, create a dedicated OIDC role with least-privilege permissions and narrow the state-bucket policy to that role plus the individual operators who need it. Until then, state-bucket operator access remains a documented hardening item.
-=======
-## 14. IAM scope on the state bucket and optional CI/CD role
-
-The bootstrap state bucket currently denies only insecure (non-HTTPS) access; it is not scoped to a specific operator role or CI/CD identity by Terraform because the real account and principals are intentionally unknown. The optional deployment workflow requires the repository owner to create a dedicated least-privilege OIDC role and restrict its trust policy to this repository and protected environment. The state bucket policy should then be narrowed to that role plus the individual operators who need it.
->>>>>>> 71250862fd348fd167e0e034b6f505b43e8e9250
+The state bucket denies non-HTTPS access. The GitHub Actions role (`GitHubActions-Terraform-Dev`) is a separate, dedicated OIDC role; its trust policy must be restricted to this repository and the protected GitHub Environment (`docs/iam/github-oidc-trust-policy.json`), and its permissions follow `docs/iam/terraform-deploy-policy.json` (PassRole limited to project roles and to `ec2.amazonaws.com` / `monitoring.rds.amazonaws.com`, state access limited to the `ecomm-platform/<env>/` prefix). Narrowing the state-bucket policy to that role plus named operators remains a documented hardening item.

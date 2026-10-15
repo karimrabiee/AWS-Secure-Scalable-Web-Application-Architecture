@@ -1,0 +1,70 @@
+{% extends "base.html" %}
+{% block title %}Platform status{% endblock %}
+{% block content %}
+<section class="container section">
+  <div class="head">
+    <div>
+      <h1 >Platform status</h1>
+      <p class="muted">Live view of the three tiers that served this request.</p>
+    </div>
+  </div>
+
+  <div class="tiers">
+    <article class="tier">
+      <header><span class="num">1</span><h2>Web tier</h2><span class="pill pill-ok">Healthy</span></header>
+      <dl>
+        <div><dt>Instance</dt><dd>{{ web.instance_id }}</dd></div>
+        <div><dt>Availability Zone</dt><dd>{{ web.az }}</dd></div>
+        <div><dt>Edge</dt><dd>WAF → ALB → Nginx</dd></div>
+        <div><dt>Process uptime</dt><dd>{{ web.uptime_seconds }}s</dd></div>
+      </dl>
+    </article>
+
+    <article class="tier">
+      <header><span class="num">2</span><h2>Application tier</h2><span class="pill pill-ok">Healthy</span></header>
+      <dl>
+        <div><dt>Runtime</dt><dd>Python <span>{{ app.python }}</span></dd></div>
+        <div><dt>Server</dt><dd>Gunicorn (systemd)</dd></div>
+        <div><dt>Subnet</dt><dd>Private · no public IP · SSM only</dd></div>
+      </dl>
+    </article>
+
+    <article class="tier">
+      {% set ok = database.state == 'connected' %}
+      <header><span class="num">3</span><h2>Database tier</h2>
+        <span class="pill {{ 'pill-ok' if ok else 'pill-bad' }}">{{ 'Connected' if ok else database.state|capitalize }}</span></header>
+      {% if ok %}
+      <dl>
+        <div><dt>Engine</dt><dd>MySQL <span>{{ database.version }}</span></dd></div>
+        <div><dt>Query latency</dt><dd><span>{{ database.latency_ms }}</span> ms</dd></div>
+        <div><dt>TLS cipher</dt><dd>{{ database.tls_cipher }}</dd></div>
+        <div><dt>Products / orders</dt><dd><span>{{ database.products }}</span> /
+          <span>{{ database.orders }}</span></dd></div>
+        <div><dt>Credentials</dt><dd>AWS Secrets Manager</dd></div>
+      </dl>
+      {% else %}
+      <p class="muted">The database could not be reached from this instance
+        ({{ database.detail or 'unknown error' }}). The web tier keeps serving health checks.</p>
+      {% endif %}
+    </article>
+  </div>
+
+  <h2 >Recent orders</h2>
+  {% if orders %}
+  <div class="wrap">
+    <table >
+      <thead><tr><th>Order</th><th>Product</th><th>Qty</th><th>Total</th><th>Handled by</th><th>AZ</th><th>Time (UTC)</th></tr></thead>
+      <tbody>
+      {% for o in orders %}
+        <tr><td>#{{ o.id }}</td><td>{{ o.product }}</td><td>{{ o.quantity }}</td><td>{{ o.total }}</td>
+            <td><code>{{ o.served_by }}</code></td><td>{{ o.az }}</td><td>{{ o.created_at }}</td></tr>
+      {% endfor %}
+      </tbody>
+    </table>
+  </div>
+  <p class="muted small">Refresh a few times: with two instances behind the ALB, orders are handled by instances in different Availability Zones.</p>
+  {% else %}
+  <div class="notice">No orders yet. <a href="{{ url_for('index') }}#catalog">Place one from the shop</a> and it will appear here.</div>
+  {% endif %}
+</section>
+{% endblock %}

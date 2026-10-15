@@ -82,16 +82,17 @@ A 502 from Nginx commonly means the local Gunicorn/Flask upstream is unavailable
 ```bash
 sudo systemctl --no-pager --full status ecomm-app nginx
 sudo journalctl -u ecomm-app -n 100 --no-pager
-sudo tail -n 100 /var/log/ecomm-app-bootstrap.log
+sudo tail -n 100 /var/log/ecomm-bootstrap.log   # or: journalctl -t ecomm-bootstrap
 sudo nginx -t
 curl -i --max-time 5 http://127.0.0.1:8000/health
 curl -i --max-time 5 http://127.0.0.1/health
+curl -s --max-time 10 http://127.0.0.1/ready   # database tier: RDS + Secrets Manager + TLS
 sudo ss -lntp
 ```
 
 Expected results: Gunicorn is listening on `127.0.0.1:8000`; both local health checks return `HTTP 200`; Nginx syntax validation succeeds. If port 8000 is unavailable, read the first Python/Gunicorn exception in `journalctl` before changing configuration. The bootstrap log records package installation, import preflight, and final health-check failures without enabling shell tracing.
 
-The source delivery chain is `app-src/app.py` and `requirements.txt` → `filebase64()` in the compute module → Launch Template user data → Auto Scaling Group instance refresh. After changing application source, run local tests and `terraform plan`; confirm the plan changes the Launch Template and refreshes the ASG before applying it. Never manually patch only one instance as the permanent fix.
+The source delivery chain is `app-src/` (`*.py`, `requirements.txt`, `templates/`, `static/`) → `fileset()` + `base64gzip(templatefile(...))` in the compute module (EC2 user-data is limited to 16 KB; a test guards the size) → Launch Template user data → Auto Scaling Group instance refresh. After changing application source, run local tests and `terraform plan`; confirm the plan changes the Launch Template and refreshes the ASG before applying it. Never manually patch only one instance as the permanent fix.
 
 ## 6. Test the application
 
@@ -99,14 +100,16 @@ The source delivery chain is `app-src/app.py` and `requirements.txt` → `fileba
 ALB_DNS=$(terraform output -raw alb_dns_name)
 curl -i "http://${ALB_DNS}/health"
 curl -i "http://${ALB_DNS}/"
+curl -s "http://${ALB_DNS}/ready"
+curl -s "http://${ALB_DNS}/api/products" | head -c 300
 ```
 
-`/health` is expected to return `200 OK`.
+`/health` returns `200 OK` without touching the database. `/ready` returns `200` with `"status":"ready"` when RDS is reachable and `503` otherwise (check the EC2 role's secret permission, the RDS security group on 3306 from the app SG, and the CA bundle download in the bootstrap log).
 
 ## 7. Pre-deploy checks
 
 ```bash
-python3 -m py_compile terraform/modules/compute/app-src/app.py
+python3 -m pytest -q   # unit + static infra contract tests (add TEST_DB_HOST=... for the DB integration suite)
 terraform fmt -check -recursive terraform
 (cd terraform/environments/dev  && terraform init -backend=false && terraform validate)
 (cd terraform/environments/prod && terraform init -backend=false && terraform validate)

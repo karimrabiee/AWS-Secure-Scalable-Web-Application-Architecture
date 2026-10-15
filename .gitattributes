@@ -1,0 +1,8 @@
+# Enforce LF so shell templates (user-data) never ship with CRLF line endings,
+# which would break bash on the EC2 instances.
+* text=auto eol=lf
+*.png binary
+*.jpg binary
+*.pdf binary
+*.zip binary
+*.tfplan binary

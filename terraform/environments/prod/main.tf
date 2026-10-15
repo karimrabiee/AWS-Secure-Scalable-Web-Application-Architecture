@@ -63,6 +63,7 @@ module "database" {
   db_username         = var.db_username
   multi_az            = true
   deletion_protection = true
+  enforce_tls         = true # MySQL itself rejects unencrypted connections (see docs/SECURITY-CONTROL.md)
   tags                = local.tags
 }
 
@@ -75,6 +76,10 @@ module "compute" {
   app_subnet_ids        = module.networking.app_subnet_ids
   app_sg_id             = module.security.app_sg_id
   target_group_arn      = module.alb.target_group_arn
+  db_address            = module.database.db_address
+  db_port               = module.database.db_port
+  db_name               = module.database.db_name
+  db_secret_arn         = module.database.master_user_secret_arn
   instance_type         = var.instance_type
   ami_id                = var.ami_id
   asg_min_size          = var.asg_min_size

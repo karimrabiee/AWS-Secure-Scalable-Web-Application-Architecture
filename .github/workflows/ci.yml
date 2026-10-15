@@ -1,98 +1,50 @@
 name: CI
 
 on:
-<<<<<<< HEAD
-  push:
-  pull_request:
-  workflow_dispatch:
-=======
   pull_request:
   push:
     branches: [main]
->>>>>>> 71250862fd348fd167e0e034b6f505b43e8e9250
+  workflow_dispatch:
 
+# Read-only token; no AWS credentials are used anywhere in this workflow.
 permissions:
   contents: read
 
-<<<<<<< HEAD
-jobs:
-  application-tests:
-    name: Application tests (Python ${{ matrix.python-version }})
-    runs-on: ubuntu-latest
-    strategy:
-      fail-fast: false
-      matrix:
-        python-version: ["3.9", "3.12"]
-    steps:
-      - name: Check out repository
-        uses: actions/checkout@v4
-      - name: Set up Python
-        uses: actions/setup-python@v5
-        with:
-          python-version: ${{ matrix.python-version }}
-          cache: pip
-          cache-dependency-path: requirements-dev.txt
-      - name: Install pinned dependencies
-        run: python -m pip install --requirement requirements-dev.txt
-      - name: Run application and source-contract tests
-        run: python -m pytest -q
-
-  terraform-validation:
-    name: Terraform validation (${{ matrix.directory }})
-    runs-on: ubuntu-latest
-    strategy:
-      fail-fast: false
-      matrix:
-        directory:
-          - terraform/bootstrap
-          - terraform/environments/dev
-          - terraform/environments/prod
-    steps:
-      - name: Check out repository
-        uses: actions/checkout@v4
-      - name: Set up Terraform
-        uses: hashicorp/setup-terraform@v3
-        with:
-          terraform_version: 1.10.5
-          terraform_wrapper: false
-      - name: Check Terraform formatting
-        run: terraform fmt -check -recursive
-      - name: Initialize without configuring remote state
-        working-directory: ${{ matrix.directory }}
-        run: terraform init -backend=false -input=false -lockfile=readonly
-      - name: Validate configuration
-        working-directory: ${{ matrix.directory }}
-        run: terraform validate -no-color
-
-  terraform-security-scan:
-    name: Terraform security scan (advisory)
-    runs-on: ubuntu-latest
-    steps:
-      - name: Check out repository
-        uses: actions/checkout@v4
-      - name: Set up Python
-        uses: actions/setup-python@v5
-        with:
-          python-version: "3.12"
-      - name: Install pinned Checkov
-        run: python -m pip install checkov==3.2.432
-      - name: Scan Terraform configuration
-        # Keep the initial scan advisory until existing findings are triaged;
-        # the report must not silently equate scanner output with a confirmed vulnerability.
-        run: checkov --directory terraform --framework terraform --soft-fail
-=======
 concurrency:
   group: ci-${{ github.workflow }}-${{ github.ref }}
   cancel-in-progress: true
 
 jobs:
-  python:
-    name: Python tests and quality
+  application:
+    name: Application (Python ${{ matrix.python-version }})
     runs-on: ubuntu-22.04
+    timeout-minutes: 15
     strategy:
       fail-fast: false
       matrix:
-        python-version: ['3.9', '3.12']
+        # 3.11 = runtime installed on the EC2 instances (Amazon Linux 2023 python3.11); 3.12 = current.
+        python-version: ["3.11", "3.12"]
+    services:
+      # Real MySQL 8.4 (same major version as RDS) for the integration tests.
+      # Throw-away CI service: the credential below protects no real data.
+      mysql:
+        image: mysql:8.4
+        env:
+          MYSQL_ROOT_PASSWORD: ci-only-throwaway
+          MYSQL_DATABASE: appdb
+        ports:
+          - 3306:3306
+        options: >-
+          --health-cmd="mysqladmin ping -h 127.0.0.1 -uroot -pci-only-throwaway"
+          --health-interval=5s
+          --health-timeout=5s
+          --health-retries=20
+    env:
+      TEST_DB_HOST: 127.0.0.1
+      TEST_DB_PORT: "3306"
+      TEST_DB_USER: root
+      TEST_DB_PASSWORD: ci-only-throwaway
+      TEST_DB_NAME: appdb
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
@@ -102,20 +54,21 @@ jobs:
           cache-dependency-path: |
             terraform/modules/compute/app-src/requirements.txt
             requirements-dev.txt
-      - name: Install dependencies
-        run: python -m pip install -r terraform/modules/compute/app-src/requirements.txt -r requirements-dev.txt
+      - name: Install pinned dependencies
+        run: python -m pip install -r requirements-dev.txt
       - name: Compile application
-        run: python -m py_compile terraform/modules/compute/app-src/app.py
-      - name: Ruff
+        run: python -m compileall -q terraform/modules/compute/app-src
+      - name: Lint (ruff)
         run: ruff check .
-      - name: Tests
-        run: pytest -q
-      - name: Dependency audit
+      - name: Tests (unit + MySQL integration + infrastructure contracts)
+        run: python -m pytest -q --cov=terraform/modules/compute/app-src --cov-report=term-missing
+      - name: Dependency vulnerability audit
         run: pip-audit -r terraform/modules/compute/app-src/requirements.txt
 
   terraform:
-    name: Terraform validation
+    name: Terraform (${{ matrix.root }})
     runs-on: ubuntu-22.04
+    timeout-minutes: 15
     strategy:
       fail-fast: false
       matrix:
@@ -124,24 +77,45 @@ jobs:
       - uses: actions/checkout@v4
       - uses: hashicorp/setup-terraform@v3
         with:
-          terraform_version: '1.10.5'
+          terraform_version: "1.10.5"
+          terraform_wrapper: false
       - name: Formatting
-        run: terraform fmt -check -recursive terraform
-      - name: Init without backend
+        run: terraform fmt -check -recursive -diff terraform
+      - name: Init (no backend, no AWS access)
         working-directory: ${{ matrix.root }}
         run: terraform init -backend=false -input=false
       - name: Validate
         working-directory: ${{ matrix.root }}
         run: terraform validate -no-color
 
-  hygiene:
-    name: Repository hygiene
+  security-scan:
+    name: Security scan (Checkov, advisory)
     runs-on: ubuntu-22.04
+    timeout-minutes: 15
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
         with:
-          python-version: '3.12'
-      - name: Check for common committed secrets and artifacts
+          python-version: "3.12"
+      - name: Install pinned Checkov
+        run: python -m pip install checkov==3.2.432
+      - name: Scan Terraform
+        # Advisory until findings are triaged (see docs/SECURITY-CONTROL.md); a
+        # scanner hit is a lead to investigate, not proof of a vulnerability.
+        run: checkov --directory terraform --framework terraform --soft-fail --compact --quiet
+
+  repository:
+    name: Repository hygiene and workflow lint
+    runs-on: ubuntu-22.04
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Secret / artifact hygiene
         run: python scripts/check-repository-hygiene.py
->>>>>>> 71250862fd348fd167e0e034b6f505b43e8e9250
+      - name: Lint GitHub Actions workflows
+        run: |
+          python -m pip install actionlint-py==1.7.12.25
+          actionlint

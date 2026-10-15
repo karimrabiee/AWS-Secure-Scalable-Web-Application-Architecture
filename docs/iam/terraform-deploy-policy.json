@@ -1,0 +1,136 @@
+{
+  "Version": "2012-10-17",
+  "Statement": [
+    {
+      "Sid": "StateBucketList",
+      "Effect": "Allow",
+      "Action": "s3:ListBucket",
+      "Resource": "arn:aws:s3:::ecomm-platform-tfstate-<ACCOUNT_ID>",
+      "Condition": {
+        "StringLike": {
+          "s3:prefix": [
+            "ecomm-platform/dev/*"
+          ]
+        }
+      }
+    },
+    {
+      "Sid": "StateObjectReadWriteDevOnly",
+      "Effect": "Allow",
+      "Action": [
+        "s3:GetObject",
+        "s3:PutObject",
+        "s3:DeleteObject"
+      ],
+      "Resource": [
+        "arn:aws:s3:::ecomm-platform-tfstate-<ACCOUNT_ID>/ecomm-platform/dev/terraform.tfstate",
+        "arn:aws:s3:::ecomm-platform-tfstate-<ACCOUNT_ID>/ecomm-platform/dev/terraform.tfstate.tflock"
+      ]
+    },
+    {
+      "Sid": "ManageProjectRolesAndInstanceProfiles",
+      "Effect": "Allow",
+      "Action": [
+        "iam:CreateRole",
+        "iam:DeleteRole",
+        "iam:GetRole",
+        "iam:TagRole",
+        "iam:UntagRole",
+        "iam:UpdateAssumeRolePolicy",
+        "iam:ListRolePolicies",
+        "iam:ListAttachedRolePolicies",
+        "iam:ListInstanceProfilesForRole",
+        "iam:PutRolePolicy",
+        "iam:GetRolePolicy",
+        "iam:DeleteRolePolicy",
+        "iam:CreateInstanceProfile",
+        "iam:DeleteInstanceProfile",
+        "iam:GetInstanceProfile",
+        "iam:AddRoleToInstanceProfile",
+        "iam:RemoveRoleFromInstanceProfile",
+        "iam:TagInstanceProfile"
+      ],
+      "Resource": [
+        "arn:aws:iam::<ACCOUNT_ID>:role/ecomm-platform-dev-*",
+        "arn:aws:iam::<ACCOUNT_ID>:instance-profile/ecomm-platform-dev-*"
+      ]
+    },
+    {
+      "Sid": "AttachOnlyTheTwoAwsManagedPoliciesUsed",
+      "Effect": "Allow",
+      "Action": [
+        "iam:AttachRolePolicy",
+        "iam:DetachRolePolicy"
+      ],
+      "Resource": "arn:aws:iam::<ACCOUNT_ID>:role/ecomm-platform-dev-*",
+      "Condition": {
+        "ArnEquals": {
+          "iam:PolicyARN": [
+            "arn:aws:iam::aws:policy/AmazonSSMManagedInstanceCore",
+            "arn:aws:iam::aws:policy/service-role/AmazonRDSEnhancedMonitoringRole"
+          ]
+        }
+      }
+    },
+    {
+      "Sid": "PassOnlyProjectRolesToTheServicesThatNeedThem",
+      "Effect": "Allow",
+      "Action": "iam:PassRole",
+      "Resource": "arn:aws:iam::<ACCOUNT_ID>:role/ecomm-platform-dev-*",
+      "Condition": {
+        "StringEquals": {
+          "iam:PassedToService": [
+            "ec2.amazonaws.com",
+            "monitoring.rds.amazonaws.com",
+            "vpc-flow-logs.amazonaws.com"
+          ]
+        }
+      }
+    },
+    {
+      "Sid": "ReadAmazonLinuxAmiParameter",
+      "Effect": "Allow",
+      "Action": "ssm:GetParameter",
+      "Resource": "arn:aws:ssm:*::parameter/aws/service/ami-amazon-linux-latest/*"
+    },
+    {
+      "Sid": "ReadDatabaseSecretMetadataOnly",
+      "Effect": "Allow",
+      "Action": [
+        "secretsmanager:DescribeSecret",
+        "secretsmanager:GetResourcePolicy"
+      ],
+      "Resource": "arn:aws:secretsmanager:*:<ACCOUNT_ID>:secret:rds!db-*"
+    },
+    {
+      "Sid": "AuditLogBucketOnly",
+      "Effect": "Allow",
+      "Action": "s3:*",
+      "Resource": [
+        "arn:aws:s3:::ecomm-platform-dev-cloudtrail-<ACCOUNT_ID>",
+        "arn:aws:s3:::ecomm-platform-dev-cloudtrail-<ACCOUNT_ID>/*"
+      ]
+    },
+    {
+      "Sid": "ServiceLevelActionsWithoutResourceLevelScoping_TightenWithAccessAnalyzer",
+      "Effect": "Allow",
+      "Action": [
+        "ec2:*",
+        "elasticloadbalancing:*",
+        "autoscaling:*",
+        "wafv2:*",
+        "rds:*",
+        "logs:*",
+        "sns:*",
+        "cloudwatch:*",
+        "cloudtrail:*"
+      ],
+      "Resource": "*",
+      "Condition": {
+        "StringEquals": {
+          "aws:RequestedRegion": "us-east-1"
+        }
+      }
+    }
+  ]
+}

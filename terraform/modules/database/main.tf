@@ -33,6 +33,34 @@ resource "aws_iam_role_policy_attachment" "rds_monitoring" {
   policy_arn = "arn:aws:iam::aws:policy/service-role/AmazonRDSEnhancedMonitoringRole"
 }
 
+# Optional server-side TLS enforcement. The application already connects with
+# verified TLS; this makes MySQL itself reject any unencrypted connection.
+# Opt-in (default off) because creating a parameter group needs extra IAM
+# permissions on the deploy role, and because RDS applies a changed parameter
+# group association at the next reboot (no downtime is caused by the apply).
+resource "aws_db_parameter_group" "tls" {
+  count       = var.enforce_tls && var.parameter_group_name == null ? 1 : 0
+  name_prefix = "${var.name_prefix}-mysql-tls-"
+  family      = var.parameter_group_family
+  description = "Require TLS for all MySQL connections"
+
+  parameter {
+    name         = "require_secure_transport"
+    value        = "1"
+    apply_method = "immediate"
+  }
+
+  tags = var.tags
+
+  lifecycle {
+    create_before_destroy = true
+  }
+}
+
+locals {
+  effective_parameter_group = var.parameter_group_name != null ? var.parameter_group_name : try(aws_db_parameter_group.tls[0].name, null)
+}
+
 resource "aws_db_instance" "main" {
   identifier = var.db_identifier
 
@@ -57,11 +85,12 @@ resource "aws_db_instance" "main" {
   # Terraform variable.
   manage_master_user_password = true
 
-  parameter_group_name = var.parameter_group_name
+  parameter_group_name = local.effective_parameter_group
 
   db_subnet_group_name   = aws_db_subnet_group.main.name
   vpc_security_group_ids = [var.db_sg_id]
   publicly_accessible    = false
+  copy_tags_to_snapshot  = true
 
   backup_retention_period   = var.backup_retention_period
   skip_final_snapshot       = false
