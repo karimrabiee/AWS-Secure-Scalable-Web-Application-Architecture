@@ -13,7 +13,7 @@ import tempfile
 import unittest
 from pathlib import Path
 
-import render_user_data as renderer
+from scripts import render_user_data as renderer
 
 try:
     import yaml
