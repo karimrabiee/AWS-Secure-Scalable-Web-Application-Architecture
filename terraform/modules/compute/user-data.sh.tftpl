@@ -37,7 +37,12 @@ retry() {
 log "Bootstrap started"
 
 # ---------------------------------------------------------------- packages --
-retry 5 10 dnf install -y nginx python3.11 python3.11-pip curl
+retry 5 10 dnf install -y nginx python3.11 python3.11-pip
+command -v curl >/dev/null 2>&1 || {
+  echo "curl is required but was not found" >&2
+  exit 1
+}
+
 python3.11 -c 'import sys; assert sys.version_info >= (3, 11), sys.version'
 log "Python runtime: $(python3.11 --version)"
 
