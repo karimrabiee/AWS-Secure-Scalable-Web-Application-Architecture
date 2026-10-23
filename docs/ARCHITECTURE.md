@@ -40,7 +40,7 @@ Security group chain: `ALB-SG ← 0.0.0.0/0` (80 always, 443 once a certificate 
 | Service | Purpose |
 |---|---|
 | VPC + IGW + 1-2 NAT Gateways | Isolated network across AZ-A and AZ-B |
-| AWS WAF (WAFv2) | Blocks common OWASP attacks, known bad inputs, and IPs with poor reputation, plus rate limiting |
+| AWS WAF (WAFv2) | AWS managed rules (common exploits, known bad inputs, IP reputation) plus a rate-based rule |
 | Application Load Balancer | HTTP/HTTPS distribution across AZs, health check on `/health` |
 | EC2 + Auto Scaling Group | Application tier; CPU target tracking by default, plus instance refresh when the AMI or user data changes |
 | RDS MySQL | Managed database, encrypted, automated backups, Multi-AZ in prod |
@@ -58,7 +58,7 @@ No Route 53, no mandatory ACM, no CloudFront, no ECS/EKS. The repository include
 | Component | Mechanism |
 |---|---|
 | ALB | Spans AZ-A and AZ-B, routes only to healthy targets |
-| EC2 | Auto Scaling Group with a minimum of two instances (prod), one per AZ, plus CPU target tracking within the configured min/max limits |
+| EC2 | Auto Scaling Group with a minimum of two instances (dev and prod defaults), spread across both AZs, plus CPU target tracking within the configured min/max limits |
 | RDS | Multi-AZ in prod — synchronous standby with automatic failover |
 | NAT | One per AZ in prod — one AZ's issue does not cut outbound traffic for the other |
 

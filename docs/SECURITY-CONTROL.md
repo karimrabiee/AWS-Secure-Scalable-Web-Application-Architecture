@@ -37,7 +37,7 @@ If the ALB is removed, EC2 becomes unreachable from the internet even without ch
 
 ### AWS WAF
 
-A Regional Web ACL is attached to the Application Load Balancer. The ACL includes the **AWS Managed Rules Common Rule Set**, which covers:
+A Regional Web ACL is attached to the Application Load Balancer. The ACL includes the **AWS Managed Rules Common Rule Set**, which is designed to help block common web exploits, for example:
 
 - SQL injection attempts
 - Cross-site scripting (XSS)
@@ -57,7 +57,7 @@ There is no SSH inbound rule anywhere in this architecture. EC2 instances are ac
 
 - Requires no open inbound port
 - Uses IAM for authentication (not SSH keys)
-- Logs all session activity to CloudTrail
+- Session start/stop API activity is recorded by CloudTrail (session content logging needs separate configuration)
 - Works from the AWS Console or the AWS CLI (`aws ssm start-session`)
 
 The EC2 instance role has `AmazonSSMManagedInstanceCore` (Session Manager) plus one inline policy that allows `secretsmanager:GetSecretValue` / `DescribeSecret` on the exact ARN of the RDS-managed master secret and nothing else. The application reads the password at runtime and re-reads it after a rotation; the password is never written to disk, user-data, Terraform variables or Git. Limitation: the app uses the master user (see `DECISIONS.md`).
@@ -102,7 +102,7 @@ The audit log S3 bucket has:
 
 ### CloudTrail
 
-A multi-region trail records every API call made in the account, including:
+A multi-region trail records AWS **management events** (control-plane API calls) in the account, for example:
 - EC2 instance launches and terminations
 - Security group changes
 - RDS configuration changes
@@ -149,11 +149,11 @@ No access keys are created. No IAM users are given console access to this specif
 
 | Threat | Mitigation |
 |---|---|
-| Web application attacks (SQLi, XSS) | AWS WAF with managed rules |
+| Common web exploits (e.g. SQLi, XSS patterns) | AWS WAF managed rules and a rate-based rule reduce exposure; not a complete defence |
 | Unencrypted traffic interception | HTTPS enforcement via ACM + HTTP redirect when `certificate_arn` is configured; HTTP-only mode remains available for bootstrap/dev |
 | Direct EC2 compromise from internet | Private subnets, no public IP, no inbound rule from internet |
 | Database exposure | DB-tier subnets have no internet route; RDS-SG accepts from EC2-SG only |
-| Unauthorized API access | CloudTrail logs all API calls; IAM least privilege |
+| Unauthorized API access | CloudTrail records management events; IAM least privilege |
 | Instance metadata SSRF | IMDSv2 required on all instances |
 | Unauthorized shell access | No SSH; SSM Session Manager with IAM auth |
 | Data exfiltration via S3 | Audit bucket is private; only CloudTrail can write to it |

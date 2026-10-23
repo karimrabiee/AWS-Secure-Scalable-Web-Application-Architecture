@@ -59,7 +59,7 @@ The state bucket and RDS both have deletion protection enabled. Dev's RDS is the
 
 ## 9. Remote state storage and locking
 
-Each environment uses a separate S3 backend key (`dev/terraform.tfstate` and `prod/terraform.tfstate`) inside the one bucket that `terraform/bootstrap` creates once. Locking uses S3's native locking feature (`use_lockfile = true`, Terraform >= 1.10) instead of a separate DynamoDB table — one fewer moving part. No real bucket name is committed to Git; the actual value is supplied through a local, gitignored `backend.hcl`.
+Each environment uses a separate S3 backend key (`ecomm-platform/dev/terraform.tfstate` and `ecomm-platform/prod/terraform.tfstate`) inside the one bucket that `terraform/bootstrap` creates once. Locking uses S3's native locking feature (`use_lockfile = true`, Terraform >= 1.10) instead of a separate DynamoDB table — one fewer moving part. No real bucket name is committed to Git; the actual value is supplied through a local, gitignored `backend.hcl`.
 
 ## 10. Existing resources and import
 

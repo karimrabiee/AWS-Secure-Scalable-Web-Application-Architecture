@@ -5,7 +5,7 @@
       "Sid": "StateBucketList",
       "Effect": "Allow",
       "Action": "s3:ListBucket",
-      "Resource": "arn:aws:s3:::ecomm-platform-tfstate-768477844931"
+      "Resource": "arn:aws:s3:::ecomm-platform-tfstate-<ACCOUNT_ID>"
     },
     {
       "Sid": "StateObjectReadWriteDevOnly",
@@ -15,8 +15,8 @@
         "s3:PutObject"
       ],
       "Resource": [
-        "arn:aws:s3:::ecomm-platform-tfstate-768477844931/ecomm-platform/dev/terraform.tfstate",
-        "arn:aws:s3:::ecomm-platform-tfstate-768477844931/ecomm-platform/dev/terraform.tfstate.tflock"
+        "arn:aws:s3:::ecomm-platform-tfstate-<ACCOUNT_ID>/ecomm-platform/dev/terraform.tfstate",
+        "arn:aws:s3:::ecomm-platform-tfstate-<ACCOUNT_ID>/ecomm-platform/dev/terraform.tfstate.tflock"
       ]
     },
     {
@@ -43,8 +43,8 @@
         "iam:TagInstanceProfile"
       ],
       "Resource": [
-        "arn:aws:iam::768477844931:role/ecomm-platform-dev-*",
-        "arn:aws:iam::768477844931:instance-profile/ecomm-platform-dev-*"
+        "arn:aws:iam::<ACCOUNT_ID>:role/ecomm-platform-dev-*",
+        "arn:aws:iam::<ACCOUNT_ID>:instance-profile/ecomm-platform-dev-*"
       ]
     },
     {
@@ -54,7 +54,7 @@
         "iam:AttachRolePolicy",
         "iam:DetachRolePolicy"
       ],
-      "Resource": "arn:aws:iam::768477844931:role/ecomm-platform-dev-*",
+      "Resource": "arn:aws:iam::<ACCOUNT_ID>:role/ecomm-platform-dev-*",
       "Condition": {
         "ArnEquals": {
           "iam:PolicyARN": [
@@ -68,7 +68,7 @@
       "Sid": "PassOnlyProjectRolesToTheServicesThatNeedThem",
       "Effect": "Allow",
       "Action": "iam:PassRole",
-      "Resource": "arn:aws:iam::768477844931:role/ecomm-platform-dev-*",
+      "Resource": "arn:aws:iam::<ACCOUNT_ID>:role/ecomm-platform-dev-*",
       "Condition": {
         "StringEquals": {
           "iam:PassedToService": [
@@ -92,15 +92,15 @@
         "secretsmanager:DescribeSecret",
         "secretsmanager:GetResourcePolicy"
       ],
-      "Resource": "arn:aws:secretsmanager:*:768477844931:secret:rds!db-*"
+      "Resource": "arn:aws:secretsmanager:*:<ACCOUNT_ID>:secret:rds!db-*"
     },
     {
       "Sid": "AuditLogBucketOnly",
       "Effect": "Allow",
       "Action": "s3:*",
       "Resource": [
-        "arn:aws:s3:::ecomm-platform-dev-cloudtrail-768477844931",
-        "arn:aws:s3:::ecomm-platform-dev-cloudtrail-768477844931/*"
+        "arn:aws:s3:::ecomm-platform-dev-cloudtrail-<ACCOUNT_ID>",
+        "arn:aws:s3:::ecomm-platform-dev-cloudtrail-<ACCOUNT_ID>/*"
       ]
     },
     {
@@ -128,7 +128,7 @@
       "Sid": "DeleteOnlyDevStateLock",
       "Effect": "Allow",
       "Action": "s3:DeleteObject",
-      "Resource": "arn:aws:s3:::ecomm-platform-tfstate-768477844931/ecomm-platform/dev/terraform.tfstate.tflock"
+      "Resource": "arn:aws:s3:::ecomm-platform-tfstate-<ACCOUNT_ID>/ecomm-platform/dev/terraform.tfstate.tflock"
     }
   ]
 }

@@ -1,4 +1,6 @@
-# Deployment guide
+# Manual deployment guide (Console build)
+
+> **Which guide do I need?** This page documents the **original manual build through the AWS Console**, which is where the design was first validated. The maintained, reproducible path is **Terraform** — see the root [`README.md`](../README.md) quick start, [`terraform/README.md`](../terraform/README.md) and [`CI-CD.md`](CI-CD.md). Resource names here (for example `Production-VPC`) are from the manual build and differ from the Terraform names. The application on the Terraform path is the Nimbus Store Flask app, not the sample page used in the manual build.
 
 Step-by-step instructions to build this architecture manually through the AWS Console. Every setting here matches the deployed and validated version of this project.
 

@@ -25,3 +25,12 @@ Key lessons from migrating an existing AWS architecture to Terraform:
 * **Handle partial destroys carefully:** If `terraform destroy` stops halfway, inspect `terraform state list` and run `terraform plan` before continuing. Avoid manually deleting resources or using `terraform state rm` unless you understand the state impact.
 
 * **Protect stateful resources:** Before destroying databases or other resources containing real data, review backups, dependencies, and deletion protection.
+
+## Lessons from the first CI deployments
+
+* **Match the backend key to the existing state.** A different key made Terraform see an empty state and try to recreate everything; the fix was a per-environment key plus an empty-state guard.
+* **`s3:ListBucket` must not carry an `s3:prefix` condition** for the state bucket: a missing object then returns 403 instead of 404.
+* **Least-privilege roles need iteration.** Refreshing resources needs read actions you do not expect (for example the full `s3:GetBucket*` set, `wafv2:GetWebACLForResource`, `iam:PassRole` to `rds.amazonaws.com`). Read the denied action from the log and add exactly that.
+* **"Saved plan is stale" means the guard works.** Re-plan, then apply.
+* **EC2 user-data is limited to 16 KB**; gzip delivery plus a size test keeps it in bounds.
+* **A completed apply is not a healthy app.** The smoke test caught a 502; the suspected cause (`curl` vs `curl-minimal` on Amazon Linux 2023) was inferred, so look at instance logs before concluding.

@@ -2,7 +2,11 @@
 
 This document breaks down the estimated hourly and monthly cost of running this architecture in `us-east-1` at the minimum configuration used for this project, along with the cost decisions made during the design phase.
 
-All prices are approximate and based on on-demand rates as of mid-2025. Prices vary by region and change over time — verify current rates at [aws.amazon.com/pricing](https://aws.amazon.com/pricing).
+All prices are approximate on-demand `us-east-1` rates taken from mid-2025 and **not re-checked since**; verify current rates at [aws.amazon.com/pricing](https://aws.amazon.com/pricing). No billing data was inspected.
+
+> **Which environment?** The tables below describe the **prod-like design** (2 NAT Gateways, Multi-AZ RDS). The `dev` environment is cheaper: 1 NAT Gateway, single-AZ RDS and 1-day backups. Using the unit prices below, `dev` is roughly **$0.093/hr (~$2.2/day, ~$68/month)**: EC2 $0.021 + one NAT $0.045 + single-AZ RDS about half of Multi-AZ ($0.017) + ALB $0.008 + Flow Logs $0.002. This is an estimate derived from this page, not a measurement.
+>
+> **Not included:** AWS WAF (one web ACL plus its rules and a per-request charge; on the order of a few to ten dollars a month at low traffic — check the pricing page), RDS enhanced monitoring, CloudWatch log storage beyond free tier, and any final RDS snapshot left after a destroy.
 
 ---
 
@@ -59,7 +63,7 @@ The `terraform/bootstrap` stack creates one **account-level monthly AWS Budget**
 
 **Cost impact:** Saves approximately $0.0104/hr (t3.micro on-demand in us-east-1) plus one Elastic IP address.
 
-**Reason:** A traditional Bastion Host pattern requires a running EC2 instance in a public subnet, an Elastic IP, an SSH key pair, and an open inbound port 22 on a security group. SSM Session Manager provides equivalent functionality with better security (IAM-based auth, no SSH keys, full session logging to CloudTrail) at zero additional cost beyond the IAM role already attached to the EC2 instances.
+**Reason:** A traditional Bastion Host pattern requires a running EC2 instance in a public subnet, an Elastic IP, an SSH key pair, and an open inbound port 22 on a security group. SSM Session Manager provides equivalent functionality with better security (IAM-based auth, no SSH keys, session API activity recorded by CloudTrail) at zero additional cost beyond the IAM role already attached to the EC2 instances.
 
 ### Auto Scaling minimum of 2 instances
 
@@ -71,7 +75,7 @@ The `terraform/bootstrap` stack creates one **account-level monthly AWS Budget**
 
 ### RDS 7-day backup retention
 
-**Decision:** Set backup retention to 7 days (the minimum that supports point-in-time recovery).
+**Decision:** Prod uses 7 days of backup retention (`dev` uses 1 day to keep cost and clutter down). Point-in-time recovery works with any retention of 1 day or more.
 
 **Cost impact:** Automated backups for RDS storage up to the provisioned storage size are free. For 20 GB RDS storage, 7 days of backups consume up to 140 GB of backup storage, which is free within the RDS backup storage free tier (equal to the sum of provisioned database storage in the region).
 
@@ -95,8 +99,8 @@ If you're running this for learning purposes and want to minimize cost:
 
 | Trade-off | Cheaper option | More resilient option | This project uses |
 |---|---|---|---|
-| NAT Gateways | 1 shared (saves $0.045/hr) | 2 per-AZ | 2 per-AZ |
+| NAT Gateways | 1 shared (saves $0.045/hr) | 2 per-AZ | dev: 1 shared · prod: 2 per-AZ |
 | EC2 minimum | 1 instance | 2 instances (one per AZ) | 2 instances |
-| RDS | Single-AZ | Multi-AZ (doubles cost) | Multi-AZ |
+| RDS | Single-AZ | Multi-AZ (doubles cost) | dev: single-AZ · prod: Multi-AZ |
 | Instance access | Bastion Host (adds $0.01/hr) | SSM Session Manager ($0) | SSM |
-| Backup retention | 1 day (less recovery window) | 7 days (free tier) | 7 days |
+| Backup retention | 1 day (less recovery window) | 7 days (free tier) | dev: 1 day · prod: 7 days |

@@ -183,13 +183,26 @@ The original environment was built manually. When running Terraform against an a
 
 Terraform does not "discover" existing AWS resources automatically. If a resource (RDS or the ALB, for example) already exists from the original manual deploy and should be kept, run `terraform import` once before the first `apply` so Terraform doesn't try to create a duplicate. Import commands are not part of the normal deployment flow above — they apply only when this specific situation comes up.
 
-## 14. Cleaning up
+## 14. Cleaning up (teardown)
 
-Never run `destroy` against prod casually. RDS and the state bucket both have deletion protection. For dev:
+Never run `destroy` against prod casually. The deploy workflow has **no destroy mode by design**; teardown is a deliberate, local, reviewed action. Cost-bearing resources are the NAT Gateway(s), ALB, RDS and WAF, so tear `dev` down after testing.
+
+Deletion protection: in `dev` the RDS instance has `deletion_protection = false` (disposable); in `prod` it is a variable intended to be on. The state bucket created by `terraform/bootstrap` has `prevent_destroy`.
+
+1. Confirm the account, region and environment (`aws sts get-caller-identity`; the backend key is per environment, your shell credentials are not).
+2. Use admin-capable credentials locally (the OIDC deploy role is intentionally not a destroy role).
+3. Review first:
 
 ```bash
-terraform plan -destroy
+cd terraform/environments/dev
+terraform init -backend-config=backend.hcl
+terraform plan -destroy        # read every line; nothing outside dev should appear
 terraform destroy
 ```
 
-Review the plan by hand before applying it — NAT Gateways, RDS, and CloudTrail keep billing even with no traffic. For production data, take and verify a final RDS snapshot before any deletion; see `docs/TROUBLESHOOTING.md` for the `prevent_destroy` behavior that guards against this by default.
+4. RDS is created with `skip_final_snapshot = false`, so a final snapshot named `<db-identifier>-final-<timestamp>` is taken and **keeps billing for storage** until you delete it. Delete it only when you no longer need the data.
+5. If `destroy` stops halfway, run `terraform state list` and `terraform plan` before retrying; do not delete resources by hand.
+6. Leave the bootstrap state bucket for last, or keep it: it holds state for every environment. Remove it only after all environments are destroyed and the state is backed up.
+7. Afterwards check the console for leftovers: NAT Gateways, Elastic IPs, ALBs, RDS snapshots, CloudWatch log groups and the CloudTrail S3 bucket (versioned, so it may need emptying).
+
+For production data, take and verify a final RDS snapshot before any deletion; see `docs/TROUBLESHOOTING.md` §10-11 (RDS deletion protection, interrupted destroy).
