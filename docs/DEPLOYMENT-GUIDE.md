@@ -1,9 +1,8 @@
 # Manual deployment guide (Console build)
 
-> **Which guide do I need?** This page documents the **original manual build through the AWS Console**, which is where the design was first validated. The maintained, reproducible path is **Terraform** — see the root [`README.md`](../README.md) quick start, [`terraform/README.md`](../terraform/README.md) and [`CI-CD.md`](CI-CD.md). Resource names here (for example `Production-VPC`) are from the manual build and differ from the Terraform names. The application on the Terraform path is the Nimbus Store Flask app, not the sample page used in the manual build.
+> **Historical reference only.** This page documents the original manual build through the AWS Console. It is preserved for provenance and learning, not as the maintained deployment path. Use Terraform and the guarded GitHub Actions workflow for reproducible changes; start with the root [`README.md`](../README.md), [`terraform/README.md`](../terraform/README.md), [`docs/RELEASE-CHECKLIST.md`](RELEASE-CHECKLIST.md) and [`CI-CD.md`](CI-CD.md). Resource names here are from the manual build and can differ from Terraform names.
 
-Step-by-step instructions to build this architecture manually through the AWS Console. Every setting here matches the deployed and validated version of this project.
-
+The settings below describe the historical design. Verify current AWS service limits, prices and security guidance before using any Console step.
 All resources are in `us-east-1`. Set a billing alert before starting — NAT Gateways and RDS bill hourly.
 
 ---

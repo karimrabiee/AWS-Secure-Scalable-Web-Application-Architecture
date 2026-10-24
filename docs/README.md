@@ -10,6 +10,8 @@
 | [`OPERATIONS.md`](OPERATIONS.md) | deploy, test, tear down, and Create/Import/Update/Destroy |
 | [`TROUBLESHOOTING.md`](TROUBLESHOOTING.md) | fix a specific Terraform or AWS error |
 | [`TEST-RESULTS.md`](TEST-RESULTS.md) | check what was tested, the evidence, and what is not proven |
+| [`RELEASE-CHECKLIST.md`](RELEASE-CHECKLIST.md) | run the small pre-merge and pre-deployment checklist |
+| [`RELEASE-NOTES.md`](RELEASE-NOTES.md) | see the changes and verification evidence for the current release |
 | [`FINDINGS-AND-FIXES.md`](FINDINGS-AND-FIXES.md) | read the real defects hit during the project and their fixes |
 | [`LESSONS-LEARNED.md`](LESSONS-LEARNED.md) | read the short lessons from the migration and first deployments |
 | [`COST-ANALYSIS.md`](COST-ANALYSIS.md) | estimate cost and see the cost trade-offs |

@@ -4,7 +4,7 @@
 
 [![AWS](https://img.shields.io/badge/AWS-us--east--1-FF9900?style=flat-square&logo=amazonaws&logoColor=white)](https://aws.amazon.com/)
 [![Terraform](https://img.shields.io/badge/Terraform-%3E%3D1.10-5C4EE5?style=flat-square&logo=terraform&logoColor=white)](https://www.terraform.io/)
-[![RDS](https://img.shields.io/badge/RDS-MySQL_Multi--AZ-527FFF?style=flat-square&logo=amazonaws&logoColor=white)](https://aws.amazon.com/rds/)
+[![RDS](https://img.shields.io/badge/RDS-MySQL-527FFF?style=flat-square&logo=amazonaws&logoColor=white)](https://aws.amazon.com/rds/)
 [![WAF](https://img.shields.io/badge/WAF-Managed_Rules-DD344C?style=flat-square&logo=amazonaws&logoColor=white)](https://aws.amazon.com/waf/)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg?style=flat-square)](LICENSE)
 [![CI](https://github.com/karimrabiee/AWS-Secure-Scalable-Web-Application-Architecture/actions/workflows/ci.yml/badge.svg)](https://github.com/karimrabiee/AWS-Secure-Scalable-Web-Application-Architecture/actions/workflows/ci.yml)
@@ -63,9 +63,8 @@ The diagram shows the intended architecture: `dev` runs **one** NAT Gateway and 
 
 The application, **Nimbus Store**, is a small Flask storefront (Nginx → Gunicorn → Flask) that reads products from RDS and writes orders back. `/health` never touches the database, so an RDS outage cannot make the ASG replace healthy instances; `/ready` includes a database round-trip.
 
-## Validation on the Terraform stack
-
-A single owner-run validation session on the Terraform-built `dev` stack (2026-10-24, deployed by [Terraform deploy #21](https://github.com/karimrabiee/AWS-Secure-Scalable-Web-Application-Architecture/actions/runs/40077713267)), checked from the AWS CLI, an SSM session and the Console, then torn down. Full table, commands and limits: [`docs/TEST-RESULTS.md`](docs/TEST-RESULTS.md) section 3. Raw logs and screenshots: [`validation-tests/terraform-dev/`](validation-tests/terraform-dev).
+## Validation evidence
+A dated owner-run validation session checked the Terraform-built `dev` stack from the AWS CLI, an SSM session and the Console, then tore it down. The evidence is intentionally classified as verified, documented, historical, partial or not done; it is not presented as an independent audit. See [`docs/TEST-RESULTS.md`](docs/TEST-RESULTS.md) for the full table, commands and limits.
 
 | Check | Result |
 |---|---|
@@ -119,12 +118,11 @@ Delivery:   GitHub Actions → OIDC → plan → approval → apply → smoke te
 
 | Claim | Status | Reference |
 |---|---|---|
-| 60 tests (Python 3.11 and 3.12; 9 need a real database), ruff, pip-audit, actionlint, `terraform fmt` | Verified locally 2026-10-20 | [`docs/TEST-RESULTS.md`](docs/TEST-RESULTS.md) |
+| 60 tests (Python 3.11 and 3.12; 9 need a real database), ruff, pip-audit, actionlint, `terraform fmt` | Verified in the documented review run | [`docs/TEST-RESULTS.md`](docs/TEST-RESULTS.md) |
 | 7 CloudWatch alarms defined | Verified in code | [`monitoring/main.tf`](terraform/modules/monitoring/main.tf) |
-| CI #21 and Terraform deploy #20 passed; `/health` and `/ready` returned 200 on `dev` | Documented: run links and screenshot supplied by the owner, not re-checked | [CI #21](https://github.com/karimrabiee/AWS-Secure-Scalable-Web-Application-Architecture/actions/runs/39423145695) · [Terraform deploy #20](https://github.com/karimrabiee/AWS-Secure-Scalable-Web-Application-Architecture/actions/runs/39423190369) · [screenshot](validation-tests/github-actions-deploy20-ci21-2026-10-20.png) |
+| A documented CI and Terraform `dev` run passed; `/health` and `/ready` returned 200 | Owner-supplied evidence, not a current live-status check | [`docs/TEST-RESULTS.md`](docs/TEST-RESULTS.md) |
 | App serves from `dev` with the database connected | Documented (dated screenshots) | [`validation-tests/`](validation-tests) |
 | RDS failover under 1 minute; WAF blocked 539 of 699 XSS test requests | Historical (manual build only) | [`validation-tests/`](validation-tests) |
-| Terraform deploy #21 succeeded (`dev`, commit `bb3c343`, 12 m 3 s) | Verified: run summary page opened; job logs need sign-in | [Terraform deploy #21](https://github.com/karimrabiee/AWS-Secure-Scalable-Web-Application-Architecture/actions/runs/40077713267) |
 | `dev` validation: private servers and RDS, IMDSv2, no port 22, WAF 403s, least-privilege role, targets in both AZs | Documented: owner-run 2026-10-24, logs and screenshots archived | [`validation-tests/terraform-dev/`](validation-tests/terraform-dev) · [`docs/TEST-RESULTS.md`](docs/TEST-RESULTS.md) |
 | Alarm e-mail delivery, self-healing, scale-out, CloudTrail and Flow Logs queries, teardown output | Not recorded (no archived evidence) | [`docs/TEST-RESULTS.md`](docs/TEST-RESULTS.md) |
 | RDS failover and load test on the Terraform stack; `prod` deploy | Not done | [`docs/TEST-RESULTS.md`](docs/TEST-RESULTS.md) |
@@ -163,6 +161,15 @@ terraform apply
 ```
 
 Or run **Actions → Terraform deploy (manual)**, choose `dev`, review the plan and approve. Run the tests with `pip install -r requirements-dev.txt && pytest -q`. More: [`terraform/README.md`](terraform/README.md) · [`docs/OPERATIONS.md`](docs/OPERATIONS.md)
+
+
+## Release contract
+
+The repository is ready for a reviewed `dev` deployment when the local checks and the CI workflow are green. A green CI run proves source and configuration checks; it does not prove that AWS quotas, OIDC permissions, the remote state object or the selected account are correct.
+
+The deployment workflow is deliberately manual. It refuses an empty remote state unless `allow_fresh_state=true`, blocks destructive plans unless `allow_destroy=true`, stores the reviewed plan as an artifact, and runs bounded `/health` and `/ready` smoke tests after apply. Never bypass these guards by applying from an unrelated local state.
+
+Before using `prod`, supply a real ACM certificate ARN, an intentional RDS instance class, a confirmed alarm email, and a reviewed cost estimate. Do not commit `terraform.tfvars`, `backend.hcl`, state files or plan files.
 
 ## Repository structure
 
