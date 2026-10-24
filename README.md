@@ -57,7 +57,7 @@ The diagram shows the intended architecture: `dev` runs **one** NAT Gateway and 
 
 | Storefront | Platform status |
 |---|---|
-| ![Live storefront](validation-tests/live-dev-app-home-2026-10-20.png) | ![Live status page](validation-tests\terraform-dev\screenshots\T04-status-orders-both-azs.png) |
+| ![Live storefront](validation-tests/live-dev-app-home-2026-10-24.png) | ![Live status page](validation-tests/live-dev-app-status-2026-10-24.png) |
 
 *Terraform-built `dev` environment, 2026-10-20. Owner-supplied screenshots (one instance each: `us-east-1b` and `us-east-1a`).*
 
