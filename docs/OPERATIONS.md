@@ -206,3 +206,48 @@ terraform destroy
 7. Afterwards check the console for leftovers: NAT Gateways, Elastic IPs, ALBs, RDS snapshots, CloudWatch log groups and the CloudTrail S3 bucket (versioned, so it may need emptying).
 
 For production data, take and verify a final RDS snapshot before any deletion; see `docs/TROUBLESHOOTING.md` §10-11 (RDS deletion protection, interrupted destroy).
+
+## 15. Validating a `dev` deployment (evidence run)
+
+The procedure behind [`TEST-RESULTS.md`](TEST-RESULTS.md) section 3. Do it in **one session** (one to two hours) and destroy straight after: the NAT Gateway, RDS, ALB and WAF bill by the hour. Commands are PowerShell; use `curl.exe`, because `curl` is an alias for `Invoke-WebRequest` there.
+
+**Pre-flight**
+
+1. `aws sts get-caller-identity` shows the intended account.
+2. Confirm the alert e-mail subscription (click *Confirm subscription* in the message, check Spam), then check it: `aws sns list-subscriptions-by-topic --topic-arn (terraform output -raw sns_topic_arn)` must show a full ARN, not `PendingConfirmation`. Alarm tests are meaningless before this.
+3. `terraform plan -detailed-exitcode` returns `0` (no drift) and does not propose to destroy the subscription.
+4. Create the evidence folders and variables:
+
+```powershell
+cd terraform/environments/dev
+$ALB = terraform output -raw alb_dns_name
+$EV  = "..\..\..\validation-tests\terraform-dev"
+New-Item -ItemType Directory -Force "$EV\logs","$EV\screenshots" | Out-Null
+```
+
+**Checks** (save each output with `| Tee-Object "$EV\logs\<ID>-<name>.txt"`; name screenshots `<ID>-<name>.png` so file names match the IDs)
+
+| ID | Check | Expected |
+|---|---|---|
+| T04 | `curl.exe -s -o NUL -w '%{http_code}\n' "http://$ALB/"` | `200` |
+| T05 | `aws elbv2 describe-target-health --target-group-arn <TG_ARN>` | all targets `healthy`, one per AZ |
+| T06 | `aws ec2 describe-instances` on the ASG, query `PublicIpAddress` and `MetadataOptions.HttpTokens` | `None` / `required` |
+| T07 | `aws rds describe-db-instances`, query `PubliclyAccessible`, `StorageEncrypted`, `MultiAZ`, `BackupRetentionPeriod` | `False` / `True` / `False` in `dev` / a number |
+| T08 | `aws ec2 describe-security-groups` with `Name=ip-permission.from-port,Values=22` | empty |
+| T09-T11 | normal request; `?q=%3Cscript%3Ealert(1)%3C/script%3E`; `-A "sqlmap/1.0"` | `200`, `403`, and record whatever the third returns |
+| T12-T15 | inside `aws ssm start-session --target <INSTANCE_ID>`: `curl -s https://checkip.amazonaws.com`; metadata call without token (`401`); with token (instance ID); `aws s3 ls` (`AccessDenied`) | NAT egress address; `401`; ID; denied |
+| T16 | `mysql` client to the RDS endpoint using the secret, `SELECT VERSION();` | version string. Wait for the command to return before taking the screenshot, and never print the secret. |
+| T17 | terminate one instance (`aws ec2 terminate-instances`), keep requesting the ALB | stays `200`; ASG launches a replacement; record the time |
+| T18 | `stress-ng --cpu 2 --timeout 600s` in a session, watch `aws autoscaling describe-scaling-activities` | ASG scales out (max 4); record the actual time |
+| T20-T21 | `aws cloudwatch set-alarm-state` to `ALARM`; then stop the web service on one instance | e-mail arrives; `alb-unhealthy-targets` goes to `ALARM`; restart the service afterwards |
+| T22-T24 | CloudTrail `lookup-events` for `StartSession` and `TerminateInstances`; Logs Insights on the flow-log group filtering `action = "REJECT"` | events and `REJECT` rows (allow 5 to 15 minutes of delay) |
+
+Not testable in `dev`: RDS Multi-AZ failover and one NAT Gateway per AZ (`prod` only). Record them as N/A rather than passed.
+
+**Before committing evidence**
+
+- Black out the account ID and tester IP in screenshots; replace e-mail addresses in logs. `Tee-Object` writes UTF-16, so convert: `Get-ChildItem "$EV\logs\*.txt" | ForEach-Object { (Get-Content $_) | Set-Content -Encoding utf8 $_ }`.
+- Never commit `terraform.tfvars`, `backend.hcl` (contains the state bucket name with the account ID) or `*.tfstate`.
+- Run `python scripts/check-repository-hygiene.py`.
+
+**Teardown check (T25-T26):** after `terraform destroy`, these should return nothing relevant: `aws ec2 describe-nat-gateways --filter Name=state,Values=available`, `aws ec2 describe-addresses`, `aws rds describe-db-instances`, `aws elbv2 describe-load-balancers`. Also look for the final RDS snapshot described in section 14, which keeps billing.

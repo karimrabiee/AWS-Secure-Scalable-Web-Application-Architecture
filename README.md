@@ -57,11 +57,34 @@ The diagram shows the intended architecture: `dev` runs **one** NAT Gateway and 
 
 | Storefront | Platform status |
 |---|---|
-| ![Live storefront](validation-tests/live-dev-app-home-2026-10-20.png) | ![Live status page](validation-tests/live-dev-app-status-2026-10-20.png) |
+| ![Live storefront](validation-tests/live-dev-app-home-2026-10-20.png) | ![Live status page](validation-tests\terraform-dev\screenshots\T04-status-orders-both-azs.png) |
 
 *Terraform-built `dev` environment, 2026-10-20. Owner-supplied screenshots (one instance each: `us-east-1b` and `us-east-1a`).*
 
 The application, **Nimbus Store**, is a small Flask storefront (Nginx → Gunicorn → Flask) that reads products from RDS and writes orders back. `/health` never touches the database, so an RDS outage cannot make the ASG replace healthy instances; `/ready` includes a database round-trip.
+
+## Validation on the Terraform stack
+
+A single owner-run validation session on the Terraform-built `dev` stack (2026-10-24, deployed by [Terraform deploy #21](https://github.com/karimrabiee/AWS-Secure-Scalable-Web-Application-Architecture/actions/runs/40077713267)), checked from the AWS CLI, an SSM session and the Console, then torn down. Full table, commands and limits: [`docs/TEST-RESULTS.md`](docs/TEST-RESULTS.md) section 3. Raw logs and screenshots: [`validation-tests/terraform-dev/`](validation-tests/terraform-dev).
+
+| Check | Result |
+|---|---|
+| App through the ALB; orders served by instances in both AZs | ✅ HTTP 200, 2 of 2 targets healthy, orders handled by `us-east-1a` and `us-east-1b` |
+| Servers private, IMDSv2 required | ✅ no public IP on either instance, `HttpTokens=required`, token-less metadata call returns 401 |
+| Database private and encrypted | ✅ `PubliclyAccessible=False`, `StorageEncrypted=True` (`MultiAZ=False` by design in `dev`) |
+| No SSH | ✅ no security-group rule on port 22 in the VPC; access through Session Manager |
+| WAF | ✅ normal request 200; XSS query string 403; `sqlmap` user agent 403; web ACL summary 36 requests, 2 blocked |
+| Least-privilege instance role | ✅ `s3:ListAllMyBuckets` and `secretsmanager:ListSecrets` denied |
+| Outbound path through NAT | ⚠️ public egress address seen from a private instance; NAT address not captured alongside |
+| CloudWatch alarms to SNS | ⚠️ alarms exist, but the SNS subscription was left unconfirmed, so e-mail delivery is **not** verified |
+| Multi-AZ failover, NAT per AZ | ➖ `prod` only; the failover result below is from the manual build |
+
+| App served from both AZs | Targets healthy |
+|---|---|
+| ![Orders handled by both AZs](validation-tests/terraform-dev/screenshots/T04-status-orders-both-azs.png) | ![Targets healthy](validation-tests/terraform-dev/screenshots/T05-targets-healthy.png) |
+| ![WAF summary](validation-tests/terraform-dev/screenshots/T10-waf-summary.png) | ![Instance role denied](validation-tests/terraform-dev/screenshots/T15-ssm-access-denied.png) |
+
+*Not recorded in this repository (no archived output, so no claim): instance self-healing, scale-out under load, CloudTrail and Flow Logs queries, teardown output.*
 
 ## How it works
 
@@ -101,11 +124,13 @@ Delivery:   GitHub Actions → OIDC → plan → approval → apply → smoke te
 | CI #21 and Terraform deploy #20 passed; `/health` and `/ready` returned 200 on `dev` | Documented: run links and screenshot supplied by the owner, not re-checked | [CI #21](https://github.com/karimrabiee/AWS-Secure-Scalable-Web-Application-Architecture/actions/runs/39423145695) · [Terraform deploy #20](https://github.com/karimrabiee/AWS-Secure-Scalable-Web-Application-Architecture/actions/runs/39423190369) · [screenshot](validation-tests/github-actions-deploy20-ci21-2026-10-20.png) |
 | App serves from `dev` with the database connected | Documented (dated screenshots) | [`validation-tests/`](validation-tests) |
 | RDS failover under 1 minute; WAF blocked 539 of 699 XSS test requests | Historical (manual build only) | [`validation-tests/`](validation-tests) |
-| Failover, WAF and load tests on the Terraform stack | Not done | [`docs/TEST-RESULTS.md`](docs/TEST-RESULTS.md) |
-| From-scratch deploy; `prod` deploy | Not done (deploy #20 was an in-place update of `dev`) | [`docs/TEST-RESULTS.md`](docs/TEST-RESULTS.md) |
+| Terraform deploy #21 succeeded (`dev`, commit `bb3c343`, 12 m 3 s) | Verified: run summary page opened; job logs need sign-in | [Terraform deploy #21](https://github.com/karimrabiee/AWS-Secure-Scalable-Web-Application-Architecture/actions/runs/40077713267) |
+| `dev` validation: private servers and RDS, IMDSv2, no port 22, WAF 403s, least-privilege role, targets in both AZs | Documented: owner-run 2026-10-24, logs and screenshots archived | [`validation-tests/terraform-dev/`](validation-tests/terraform-dev) · [`docs/TEST-RESULTS.md`](docs/TEST-RESULTS.md) |
+| Alarm e-mail delivery, self-healing, scale-out, CloudTrail and Flow Logs queries, teardown output | Not recorded (no archived evidence) | [`docs/TEST-RESULTS.md`](docs/TEST-RESULTS.md) |
+| RDS failover and load test on the Terraform stack; `prod` deploy | Not done | [`docs/TEST-RESULTS.md`](docs/TEST-RESULTS.md) |
 | Checkov (advisory): 229 passed / 39 findings, classified | Verified locally | [`docs/TEST-RESULTS.md`](docs/TEST-RESULTS.md) |
 
-**Known limitations:** HTTP by default (HTTPS needs your ACM `certificate_arn`) · the app connects as the RDS master user · GuardDuty, Security Hub, AWS Config and customer-managed KMS keys are not implemented.
+**Known limitations:** HTTP by default (HTTPS needs your ACM `certificate_arn`) · the app connects as the RDS master user · alarm e-mail delivery was not verified in the validation run (unconfirmed SNS subscription) · GuardDuty, Security Hub, AWS Config and customer-managed KMS keys are not implemented.
 
 <details>
 <summary><strong>Manual-build screenshots (historical)</strong></summary>
@@ -147,7 +172,7 @@ terraform/         bootstrap/ · environments/{dev,prod}/ · modules/{networking
 tests/             unit, database-integration and infrastructure-contract tests
 architecture/      initial and current diagrams
 docs/              architecture, decisions, security, CI/CD, operations, test results
-screenshots/ validation-tests/   manual-build evidence and live dev captures
+screenshots/ validation-tests/   manual-build evidence, live dev captures, terraform-dev/ logs and screenshots
 ```
 
 ## Documentation
