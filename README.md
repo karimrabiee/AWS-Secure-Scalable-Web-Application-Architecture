@@ -182,6 +182,14 @@ docs/              architecture, decisions, security, CI/CD, operations, test re
 screenshots/ validation-tests/   manual-build evidence, live dev captures, terraform-dev/ logs and screenshots
 ```
 
+## Service and portfolio notes
+
+This repository is also used as a technical work sample. For a buyer-facing summary, see [Client Service Evidence](docs/CLIENT-SERVICE-EVIDENCE.md). The page separates recorded implementation evidence from historical results and items not tested.
+
+If you are reviewing service scope, the prepared [GitHub Actions + AWS OIDC service brief](docs/FIVERR-GIG-01-COPY.md) explains the intended deliverables, prerequisites, validation, and exclusions. It is a draft listing, not an active Fiverr offer.
+
+Additional seller copy drafts: [Terraform AWS](docs/FIVERR-GIG-02-TERRAFORM-COPY.md) · [AWS Security Configuration Review](docs/FIVERR-GIG-03-AWS-SECURITY-REVIEW-COPY.md) · [Terraform/AWS Troubleshooting](docs/FIVERR-GIG-04-TERRAFORM-AWS-TROUBLESHOOTING-COPY.md) · [Profile Copy](docs/FIVERR-PROFILE-COPY.md) · [Buyer Message Templates](docs/FIVERR-OPERATIONS-AND-MESSAGE-TEMPLATES.md).
+
 ## Documentation
 
 | Doc | Purpose |
