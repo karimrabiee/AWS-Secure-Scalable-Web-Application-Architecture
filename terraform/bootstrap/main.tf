@@ -3,47 +3,6 @@
 # environments point at the SAME bucket with different state keys
 # (env:/dev/... and env:/prod/... via each environment's backend.hcl).
 
-terraform {
-  required_version = ">= 1.10.0, < 2.0.0"
-  required_providers {
-    aws = {
-      source  = "hashicorp/aws"
-      version = ">= 5.60.0, < 6.0.0"
-    }
-  }
-}
-
-variable "aws_region" {
-  type    = string
-  default = "us-east-1"
-}
-
-variable "project_name" {
-  type    = string
-  default = "ecomm-platform"
-}
-
-variable "budget_limit_usd" {
-  description = "Monthly account-level AWS Budget limit in USD. This covers the account, not only Terraform resources."
-  type        = number
-  default     = 5
-
-  validation {
-    condition     = var.budget_limit_usd > 0
-    error_message = "budget_limit_usd must be greater than zero."
-  }
-}
-
-variable "budget_email" {
-  description = "Optional email address for AWS Budget alerts. Set via TF_VAR_budget_email or a local, gitignored tfvars file."
-  type        = string
-  default     = null
-}
-
-provider "aws" {
-  region = var.aws_region
-}
-
 data "aws_caller_identity" "current" {}
 
 resource "aws_s3_bucket" "tfstate" {
@@ -156,12 +115,4 @@ resource "aws_budgets_budget" "monthly_account" {
       subscriber_email_addresses = [notification.value]
     }
   }
-}
-
-output "bucket_name" {
-  value = aws_s3_bucket.tfstate.bucket
-}
-
-output "monthly_budget_name" {
-  value = aws_budgets_budget.monthly_account.name
 }
